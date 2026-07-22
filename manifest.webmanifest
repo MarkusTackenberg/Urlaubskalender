@@ -1,7 +1,7 @@
 {
   "name": "Urlaubskalender",
   "short_name": "Urlaub",
-  "description": "Persönlicher Urlaubskalender mit OneDrive-Synchronisierung",
+  "description": "Persönlicher Urlaubskalender mit lokaler Speicherung und Datensicherung",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

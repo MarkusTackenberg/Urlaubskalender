@@ -7,16 +7,12 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Urlaubskalender">
-  <meta name="description" content="Persönlicher Urlaubskalender mit OneDrive-Synchronisierung">
+  <meta name="description" content="Persönlicher Urlaubskalender mit lokaler Speicherung und Datensicherung">
   <title>Urlaubskalender</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="stylesheet" href="styles.css">
-  <script
-    src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"
-    integrity="sha384-PARf28kmic36Ve+O3DnUerRXFtOQ7ZDqRDGpLcbljly5/N39T2OV3kt3QsWOKeAX"
-    crossorigin="anonymous"></script>
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -27,7 +23,7 @@
       <h1>Urlaubskalender</h1>
     </div>
     <div class="header-actions">
-      <button id="syncButton" class="button secondary" type="button">OneDrive verbinden</button>
+      <button id="backupButton" class="button secondary" type="button">Sicherung speichern</button>
       <button id="menuButton" class="button icon-button" type="button" aria-label="Menü öffnen">☰</button>
     </div>
   </header>
@@ -43,6 +39,17 @@
         <button id="todayButton" class="button secondary" type="button">Heute</button>
         <button id="addEntryButton" class="button primary" type="button">Eintrag</button>
         <button id="addSeriesButton" class="button secondary" type="button">Serie</button>
+      </div>
+    </section>
+
+    <section class="backup-bar card" aria-label="Datensicherung">
+      <div>
+        <strong id="backupHeadline">Daten werden auf diesem Gerät gespeichert</strong>
+        <span id="backupDetails">Für die Nutzung auf einem anderen Gerät eine Sicherung in OneDrive speichern.</span>
+      </div>
+      <div class="backup-actions">
+        <button id="loadButton" class="button secondary" type="button">Daten laden</button>
+        <button id="backupBarButton" class="button primary" type="button">Sicherung speichern</button>
       </div>
     </section>
 
@@ -95,15 +102,13 @@
         <h2>Menü</h2>
         <button class="button icon-button" type="button" data-close-menu aria-label="Menü schließen">×</button>
       </div>
-      <div id="syncStatus" class="sync-status">Nur lokal gespeichert</div>
+      <div id="backupStatus" class="sync-status">Daten werden nur auf diesem Gerät gespeichert.</div>
       <button id="settingsButton" class="menu-item" type="button">Einstellungen</button>
       <button id="seriesListButton" class="menu-item" type="button">Serientermine verwalten</button>
-      <button id="manualSyncButton" class="menu-item" type="button">Jetzt synchronisieren</button>
-      <button id="exportButton" class="menu-item" type="button">Datensicherung herunterladen</button>
-      <label class="menu-item file-label">Datensicherung einlesen<input id="importInput" type="file" accept="application/json,.json"></label>
+      <button id="exportButton" class="menu-item" type="button">Sicherung in OneDrive speichern</button>
+      <label class="menu-item file-label">Sicherung aus OneDrive laden<input id="importInput" type="file" accept="application/json,.json"></label>
+      <button id="backupHelpButton" class="menu-item" type="button">Gerätewechsel erklären</button>
       <button id="printButton" class="menu-item" type="button">Jahresübersicht drucken</button>
-      <button id="setupButton" class="menu-item" type="button">OneDrive-Einrichtung</button>
-      <button id="logoutButton" class="menu-item danger-text hidden" type="button">Microsoft-Verbindung trennen</button>
     </div>
   </aside>
 
@@ -275,61 +280,28 @@
     </div>
   </dialog>
 
-  <dialog id="setupDialog" class="modal wide-modal">
-    <form id="setupForm" method="dialog">
-      <div class="modal-header">
-        <div>
-          <p class="eyebrow">Microsoft-Anmeldung</p>
-          <h2>OneDrive einrichten</h2>
-        </div>
-        <button class="button icon-button" type="button" data-close-dialog="setupDialog" aria-label="Schließen">×</button>
-      </div>
-      <div class="setup-copy">
-        <p>Für die Synchronisierung braucht der Kalender die <strong>Anwendungs-ID</strong> einer kostenlosen Microsoft-App-Registrierung. Die ID ist kein Passwort und darf im Browser gespeichert werden.</p>
-        <label>Anwendungs-ID (Client-ID)
-          <input id="clientIdInput" class="input" type="text" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000">
-        </label>
-        <label>Art des OneDrive-Kontos
-          <select id="permissionModeInput" class="select">
-            <option value="personal">Privates Microsoft-Konto, nur App-Ordner</option>
-            <option value="business">Geschäftliches Microsoft-Konto</option>
-          </select>
-        </label>
-        <label>Umleitungsadresse für Microsoft
-          <input id="redirectUriInput" class="input" type="text" readonly>
-        </label>
-        <ol>
-          <li>Microsoft Entra Admin Center öffnen und eine neue App-Registrierung anlegen.</li>
-          <li>Kontotyp: persönliche Microsoft-Konten sowie Geschäfts- und Schulkonten zulassen.</li>
-          <li>Unter „Authentifizierung“ die oben angezeigte Adresse als <strong>Single-Page-Anwendung</strong> eintragen.</li>
-          <li>Bei einem privaten Konto die delegierte Berechtigung <code>Files.ReadWrite.AppFolder</code> hinzufügen. Bei einem geschäftlichen Konto <code>Files.ReadWrite</code> verwenden.</li>
-          <li>Die Anwendungs-ID hier eintragen und speichern.</li>
-        </ol>
-        <p class="form-hint">Bei einem privaten Konto erhält die App nur Zugriff auf ihren eigenen OneDrive-App-Ordner. Bei einem Geschäftskonto ist technisch die breitere Berechtigung Files.ReadWrite nötig; der Programmcode greift trotzdem ausschließlich auf den App-Ordner zu.</p>
-      </div>
-      <div class="modal-actions">
-        <button id="clearClientIdButton" class="button danger" type="button">ID entfernen</button>
-        <span class="spacer"></span>
-        <button class="button secondary" type="button" data-close-dialog="setupDialog">Abbrechen</button>
-        <button class="button primary" type="submit" value="default">Speichern</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="conflictDialog" class="modal">
+  <dialog id="backupHelpDialog" class="modal wide-modal">
     <div class="modal-header">
       <div>
-        <p class="eyebrow">Synchronisierung angehalten</p>
-        <h2>Neuere Daten in OneDrive</h2>
+        <p class="eyebrow">PC, iPhone und iPad</p>
+        <h2>Daten zwischen Geräten übertragen</h2>
       </div>
+      <button class="button icon-button" type="button" data-close-dialog="backupHelpDialog" aria-label="Schließen">×</button>
     </div>
-    <p>Auf einem anderen Gerät wurden Daten geändert. Damit nichts überschrieben wird, speichert der Kalender jetzt nicht automatisch weiter.</p>
-    <p>Du kannst zuerst deine lokalen Daten als Sicherung herunterladen und anschließend den neueren OneDrive-Stand laden.</p>
-    <div class="modal-actions stack-mobile">
-      <button id="conflictExportButton" class="button secondary" type="button">Lokale Sicherung laden</button>
+    <div class="setup-copy">
+      <p>Der Kalender speichert Änderungen sofort auf dem gerade verwendeten Gerät. Damit ein anderes Gerät denselben Stand erhält, verwendest du eine Sicherungsdatei in OneDrive.</p>
+      <ol>
+        <li>Nach Änderungen auf <strong>„Sicherung speichern“</strong> tippen.</li>
+        <li>Die Datei <code>Urlaubskalender-Daten.json</code> in deinem OneDrive-Ordner ablegen beziehungsweise die vorhandene Datei ersetzen.</li>
+        <li>Auf dem anderen Gerät zuerst <strong>„Daten laden“</strong> wählen und diese Datei aus OneDrive öffnen.</li>
+        <li>Erst danach auf dem anderen Gerät neue Änderungen eintragen.</li>
+      </ol>
+      <p class="form-hint"><strong>Wichtig:</strong> Nicht gleichzeitig auf zwei Geräten Änderungen machen, ohne vorher den jeweils neuesten Stand zu laden. Sonst können Einträge überschrieben werden.</p>
+      <p class="form-hint">Auf iPhone und iPad öffnet sich beim Sichern das Teilen-Menü. Dort „In Dateien sichern“ wählen und anschließend OneDrive als Speicherort nehmen.</p>
+    </div>
+    <div class="modal-actions">
       <span class="spacer"></span>
-      <button id="conflictKeepLocalButton" class="button danger" type="button">Lokalen Stand behalten</button>
-      <button id="conflictLoadRemoteButton" class="button primary" type="button">OneDrive-Stand übernehmen</button>
+      <button class="button primary" type="button" data-close-dialog="backupHelpDialog">Verstanden</button>
     </div>
   </dialog>
 

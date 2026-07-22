@@ -203,3 +203,20 @@ label { display: grid; gap: .35rem; color: var(--muted); font-size: .8rem; font-
   .calendar-grid { grid-template-columns: repeat(3, 1fr); gap: 5px; }
   .day-cell { min-height: 32px; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
+
+/* Datensicherung ohne Cloud-Anmeldung */
+.backup-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: .9rem 1rem; margin-bottom: 1rem;
+}
+.backup-bar > div:first-child { display: grid; gap: .2rem; }
+.backup-bar strong { font-size: .95rem; }
+.backup-bar span { color: var(--muted); font-size: .82rem; line-height: 1.4; }
+.backup-actions { display: flex; gap: .55rem; flex: 0 0 auto; }
+.button.attention { box-shadow: 0 0 0 3px rgba(184, 111, 18, .18); }
+@media (max-width: 700px) {
+  .backup-bar { align-items: stretch; flex-direction: column; }
+  .backup-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .backup-actions .button { width: 100%; }
+  .header-actions #backupButton { display: none; }
+}

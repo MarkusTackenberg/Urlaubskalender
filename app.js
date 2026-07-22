@@ -2,11 +2,8 @@
   "use strict";
 
   const STORAGE_KEY = "urlaubskalender-data-v1";
-  const CLIENT_ID_KEY = "urlaubskalender-ms-client-id";
-  const PERMISSION_MODE_KEY = "urlaubskalender-ms-permission-mode";
-  const SYNC_BASE_KEY = "urlaubskalender-last-synced-updated-at";
-  const REMOTE_FILE = "urlaubskalender.json";
-  const GRAPH_ROOT = "https://graph.microsoft.com/v1.0";
+  const SAFE_REVISION_KEY = "urlaubskalender-safe-revision";
+  const SAFE_AT_KEY = "urlaubskalender-safe-at";
   const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
   const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const STATUS_NAMES = { planned: "geplant", requested: "beantragt", approved: "genehmigt", taken: "genommen" };
@@ -14,11 +11,6 @@
 
   let state = loadLocalState();
   let activeYear = new Date().getFullYear();
-  let msalInstance = null;
-  let currentAccount = null;
-  let remoteMeta = { id: null, eTag: null };
-  let syncTimer = null;
-  let syncBlocked = false;
   let toastTimer = null;
 
   const $ = (id) => document.getElementById(id);
@@ -26,27 +18,25 @@
 
   document.addEventListener("DOMContentLoaded", init);
 
-  async function init() {
+  function init() {
     cacheRefs();
     bindEvents();
     ensureYearSettings(activeYear);
     renderAll();
-    updateSetupFields();
     registerServiceWorker();
-    await initializeMicrosoft();
   }
 
   function cacheRefs() {
     [
-      "toast", "syncButton", "menuButton", "prevYear", "nextYear", "yearButton", "todayButton", "addEntryButton", "addSeriesButton",
-      "summaryCards", "calendar", "entryFilter", "entryList", "commonFreeList", "sideMenu", "syncStatus", "settingsButton",
-      "seriesListButton", "manualSyncButton", "exportButton", "importInput", "printButton", "setupButton", "logoutButton",
+      "toast", "backupButton", "backupBarButton", "loadButton", "backupHeadline", "backupDetails", "menuButton",
+      "prevYear", "nextYear", "yearButton", "todayButton", "addEntryButton", "addSeriesButton",
+      "summaryCards", "calendar", "entryFilter", "entryList", "commonFreeList", "sideMenu", "backupStatus", "settingsButton",
+      "seriesListButton", "exportButton", "importInput", "backupHelpButton", "printButton",
       "entryDialog", "entryForm", "entryDialogTitle", "entryId", "entryType", "entryStatus", "entryStart", "entryEnd", "entryDayPart",
       "entryNote", "entryPreview", "deleteEntryButton", "statusField", "dayPartField", "seriesDialog", "seriesForm", "seriesDialogTitle",
       "seriesId", "seriesType", "seriesWeekday", "seriesInterval", "seriesStart", "seriesEnd", "seriesTitle", "deleteSeriesButton",
       "settingsDialog", "settingsForm", "ownName", "partnerName", "annualLeave", "carryOver", "holidaysEnabled", "settingsYearLabel",
-      "seriesListDialog", "seriesList", "newSeriesFromList", "setupDialog", "setupForm", "clientIdInput", "permissionModeInput", "redirectUriInput", "clearClientIdButton",
-      "conflictDialog", "conflictExportButton", "conflictKeepLocalButton", "conflictLoadRemoteButton", "legendOwn", "legendPartner"
+      "seriesListDialog", "seriesList", "newSeriesFromList", "backupHelpDialog", "legendOwn", "legendPartner"
     ].forEach(id => refs[id] = $(id));
   }
 
@@ -67,13 +57,13 @@
     refs.settingsButton.addEventListener("click", () => { closeMenu(); openSettings(); });
     refs.seriesListButton.addEventListener("click", () => { closeMenu(); renderSeriesList(); refs.seriesListDialog.showModal(); });
     refs.newSeriesFromList.addEventListener("click", () => { refs.seriesListDialog.close(); openSeriesDialog(); });
-    refs.manualSyncButton.addEventListener("click", async () => { closeMenu(); await syncNow(true); });
+    refs.backupButton.addEventListener("click", exportBackup);
+    refs.backupBarButton.addEventListener("click", exportBackup);
     refs.exportButton.addEventListener("click", () => { closeMenu(); exportBackup(); });
+    refs.loadButton.addEventListener("click", () => refs.importInput.click());
     refs.importInput.addEventListener("change", importBackup);
+    refs.backupHelpButton.addEventListener("click", () => { closeMenu(); refs.backupHelpDialog.showModal(); });
     refs.printButton.addEventListener("click", () => { closeMenu(); window.print(); });
-    refs.setupButton.addEventListener("click", () => { closeMenu(); updateSetupFields(); refs.setupDialog.showModal(); });
-    refs.syncButton.addEventListener("click", handleSyncButton);
-    refs.logoutButton.addEventListener("click", logoutMicrosoft);
 
     refs.entryForm.addEventListener("submit", saveEntryFromForm);
     refs.entryType.addEventListener("change", updateEntryFormVisibility);
@@ -83,26 +73,7 @@
     refs.seriesForm.addEventListener("submit", saveSeriesFromForm);
     refs.deleteSeriesButton.addEventListener("click", deleteCurrentSeries);
     refs.settingsForm.addEventListener("submit", saveSettingsFromForm);
-    refs.setupForm.addEventListener("submit", saveSetupFromForm);
-    refs.clearClientIdButton.addEventListener("click", clearClientId);
     refs.entryFilter.addEventListener("change", renderEntryList);
-
-    refs.conflictExportButton.addEventListener("click", exportBackup);
-    refs.conflictKeepLocalButton.addEventListener("click", async () => {
-      if (!confirm("Der aktuelle lokale Stand überschreibt den neueren OneDrive-Stand. Wirklich fortfahren?")) return;
-      refs.conflictDialog.close();
-      await overwriteRemoteWithLocal();
-    });
-    refs.conflictLoadRemoteButton.addEventListener("click", async () => {
-      refs.conflictDialog.close();
-      await loadRemoteState(true);
-    });
-
-    window.addEventListener("online", () => { updateSyncUi(); scheduleSync(); });
-    window.addEventListener("offline", updateSyncUi);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && currentAccount && !syncBlocked) syncNow(false);
-    });
   }
 
   function defaultState() {
@@ -159,7 +130,7 @@
       state.updatedAt = new Date().toISOString();
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    if (isUserChange) scheduleSync();
+    updateBackupUi();
   }
 
   function changeYear(year) {
@@ -178,7 +149,7 @@
     renderCalendar();
     renderEntryList();
     renderCommonFree();
-    updateSyncUi();
+    updateBackupUi();
   }
 
   function renderSummary() {
@@ -603,14 +574,51 @@
   function openMenu() { refs.sideMenu.setAttribute("aria-hidden", "false"); }
   function closeMenu() { refs.sideMenu.setAttribute("aria-hidden", "true"); }
 
-  function exportBackup() {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `Urlaubskalender_Sicherung_${new Date().toISOString().slice(0,10)}.json`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    showToast("Datensicherung wurde erstellt.");
+  async function exportBackup() {
+    const json = JSON.stringify(state, null, 2);
+    const fileName = "Urlaubskalender-Daten.json";
+    const blob = new Blob([json], { type: "application/json" });
+
+    try {
+      if (typeof window.showSaveFilePicker === "function") {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{ description: "Urlaubskalender-Sicherung", accept: { "application/json": [".json"] } }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        markCurrentStateSafe();
+        showToast("Sicherung wurde gespeichert.");
+        return;
+      }
+
+      const file = new File([blob], fileName, { type: "application/json" });
+      if (navigator.canShare?.({ files: [file] }) && typeof navigator.share === "function") {
+        await navigator.share({
+          files: [file],
+          title: "Urlaubskalender-Sicherung",
+          text: "Diese Datei in OneDrive speichern und dort die vorhandene Sicherung ersetzen."
+        });
+        markCurrentStateSafe();
+        showToast("Sicherung wurde zum Speichern bereitgestellt.");
+        return;
+      }
+
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      markCurrentStateSafe();
+      showToast("Sicherungsdatei wurde heruntergeladen. Bitte in OneDrive ablegen.");
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      console.error(error);
+      showToast("Die Sicherung konnte nicht erstellt werden.", "error");
+    }
   }
 
   async function importBackup(event) {
@@ -618,306 +626,64 @@
     event.target.value = "";
     if (!file) return;
     try {
-      const parsed = normalizeState(JSON.parse(await file.text()));
-      if (!confirm("Die eingelesene Sicherung ersetzt die derzeitigen lokalen Daten. Fortfahren?")) return;
+      const raw = JSON.parse(await file.text());
+      if (!raw || typeof raw !== "object" || !Array.isArray(raw.entries) || !Array.isArray(raw.series)) {
+        throw new Error("Unbekanntes Datenformat");
+      }
+      const parsed = normalizeState(raw);
+      const importedDate = formatDateTime(parsed.updatedAt);
+      const localDate = formatDateTime(state.updatedAt);
+      const message = `Die Sicherung vom ${importedDate} ersetzt den lokalen Stand vom ${localDate}. Fortfahren?`;
+      if (!confirm(message)) return;
       state = parsed;
       activeYear = new Date().getFullYear();
       ensureYearSettings(activeYear);
-      saveLocal(true);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      markCurrentStateSafe();
       renderAll();
       closeMenu();
-      showToast("Datensicherung wurde eingelesen.");
+      showToast("Sicherung wurde eingelesen.");
     } catch (error) {
       console.error(error);
       showToast("Die Sicherungsdatei ist ungültig.", "error");
     }
   }
 
-  function updateSetupFields() {
-    refs.clientIdInput.value = localStorage.getItem(CLIENT_ID_KEY) || "";
-    refs.permissionModeInput.value = localStorage.getItem(PERMISSION_MODE_KEY) || "personal";
-    refs.redirectUriInput.value = getRedirectUri();
+  function markCurrentStateSafe() {
+    localStorage.setItem(SAFE_REVISION_KEY, String(Number(state.revision) || 0));
+    localStorage.setItem(SAFE_AT_KEY, new Date().toISOString());
+    updateBackupUi();
   }
 
-  async function saveSetupFromForm(event) {
-    event.preventDefault();
-    const clientId = refs.clientIdInput.value.trim();
-    if (!/^[0-9a-f-]{36}$/i.test(clientId)) return showToast("Die Anwendungs-ID sieht nicht gültig aus.", "error");
-    localStorage.setItem(CLIENT_ID_KEY, clientId);
-    localStorage.setItem(PERMISSION_MODE_KEY, refs.permissionModeInput.value || "personal");
-    refs.setupDialog.close();
-    showToast("Anwendungs-ID gespeichert. Microsoft-Verbindung wird vorbereitet.");
-    await initializeMicrosoft(true);
-  }
+  function updateBackupUi() {
+    if (!refs.backupHeadline) return;
+    const safeRevision = Number(localStorage.getItem(SAFE_REVISION_KEY));
+    const hasSafeRevision = localStorage.getItem(SAFE_REVISION_KEY) !== null;
+    const isDirty = !hasSafeRevision || safeRevision !== Number(state.revision || 0);
+    const safeAt = localStorage.getItem(SAFE_AT_KEY);
 
-  async function clearClientId() {
-    if (!confirm("Anwendungs-ID und Microsoft-Anmeldung auf diesem Gerät entfernen? Die Kalenderdaten bleiben erhalten.")) return;
-    try { if (msalInstance && currentAccount) await msalInstance.logoutRedirect({ account: currentAccount, postLogoutRedirectUri: getRedirectUri() }); }
-    catch (error) { console.warn(error); }
-    localStorage.removeItem(CLIENT_ID_KEY);
-    localStorage.removeItem(PERMISSION_MODE_KEY);
-    localStorage.removeItem(SYNC_BASE_KEY);
-    msalInstance = null;
-    currentAccount = null;
-    remoteMeta = { id: null, eTag: null };
-    refs.setupDialog.close();
-    updateSyncUi();
-  }
-
-  function getRedirectUri() {
-    if (location.protocol === "file:") return "Die OneDrive-Anmeldung funktioniert erst über die veröffentlichte HTTPS-Adresse.";
-    return `${location.origin}${location.pathname}`;
-  }
-
-  async function initializeMicrosoft(force = false) {
-    const clientId = localStorage.getItem(CLIENT_ID_KEY);
-    if (!clientId || location.protocol === "file:" || typeof msal === "undefined") {
-      updateSyncUi();
-      return;
-    }
-    if (msalInstance && !force) return;
-    try {
-      msalInstance = new msal.PublicClientApplication({
-        auth: {
-          clientId,
-          authority: "https://login.microsoftonline.com/common",
-          redirectUri: getRedirectUri(),
-          postLogoutRedirectUri: getRedirectUri(),
-          navigateToLoginRequestUrl: true
-        },
-        cache: { cacheLocation: "localStorage", storeAuthStateInCookie: true }
-      });
-      const response = await msalInstance.handleRedirectPromise();
-      if (response?.account) msalInstance.setActiveAccount(response.account);
-      currentAccount = msalInstance.getActiveAccount() || msalInstance.getAllAccounts()[0] || null;
-      if (currentAccount) {
-        msalInstance.setActiveAccount(currentAccount);
-        await loadRemoteState(false);
-      }
-    } catch (error) {
-      console.error("Microsoft-Initialisierung fehlgeschlagen", error);
-      showToast(humanizeMsError(error), "error");
-    }
-    updateSyncUi();
-  }
-
-  async function handleSyncButton() {
-    const clientId = localStorage.getItem(CLIENT_ID_KEY);
-    if (!clientId) {
-      updateSetupFields();
-      refs.setupDialog.showModal();
-      return;
-    }
-    if (!msalInstance) await initializeMicrosoft(true);
-    if (!currentAccount) await loginMicrosoft();
-    else await syncNow(true);
-  }
-
-  function getGraphScopes() {
-    return [localStorage.getItem(PERMISSION_MODE_KEY) === "business" ? "Files.ReadWrite" : "Files.ReadWrite.AppFolder"];
-  }
-
-  async function loginMicrosoft() {
-    if (!msalInstance) return showToast("Die Microsoft-Anmeldung ist noch nicht eingerichtet.", "warning");
-    try {
-      await msalInstance.loginRedirect({ scopes: ["openid", "profile", ...getGraphScopes()], prompt: "select_account" });
-    } catch (error) {
-      console.error(error);
-      showToast(humanizeMsError(error), "error");
-    }
-  }
-
-  async function logoutMicrosoft() {
-    closeMenu();
-    if (!msalInstance || !currentAccount) return;
-    await msalInstance.logoutRedirect({ account: currentAccount, postLogoutRedirectUri: getRedirectUri() });
-  }
-
-  async function getAccessToken() {
-    if (!msalInstance || !currentAccount) throw new Error("Nicht mit Microsoft verbunden.");
-    try {
-      const result = await msalInstance.acquireTokenSilent({ account: currentAccount, scopes: getGraphScopes() });
-      return result.accessToken;
-    } catch (error) {
-      if (error instanceof msal.InteractionRequiredAuthError) {
-        await msalInstance.acquireTokenRedirect({ account: currentAccount, scopes: getGraphScopes() });
-        throw new Error("Anmeldung wird erneuert.");
-      }
-      throw error;
-    }
-  }
-
-  async function graphFetch(path, options = {}) {
-    const token = await getAccessToken();
-    const headers = new Headers(options.headers || {});
-    headers.set("Authorization", `Bearer ${token}`);
-    const response = await fetch(`${GRAPH_ROOT}${path}`, { ...options, headers });
-    if (!response.ok) {
-      const text = await response.text();
-      const error = new Error(`Microsoft Graph ${response.status}: ${text || response.statusText}`);
-      error.status = response.status;
-      throw error;
-    }
-    return response;
-  }
-
-  async function getRemoteMetadata() {
-    try {
-      const response = await graphFetch(`/me/drive/special/approot:/${encodeURIComponent(REMOTE_FILE)}?$select=id,name,eTag,lastModifiedDateTime`);
-      return await response.json();
-    } catch (error) {
-      if (error.status === 404) return null;
-      throw error;
-    }
-  }
-
-  async function loadRemoteState(force = false) {
-    if (!currentAccount || !navigator.onLine) return;
-    setSyncStatus("OneDrive wird geladen …");
-    try {
-      const meta = await getRemoteMetadata();
-      if (!meta) {
-        await saveRemoteState(true);
-        return;
-      }
-      const response = await graphFetch(`/me/drive/items/${meta.id}/content`);
-      const remoteState = normalizeState(await response.json());
-      const syncBase = localStorage.getItem(SYNC_BASE_KEY);
-      const localHasData = state.revision > 0 || state.entries.length > 0 || state.series.length > 0;
-      const remoteHasData = remoteState.revision > 0 || remoteState.entries.length > 0 || remoteState.series.length > 0;
-      const localChanged = syncBase ? state.updatedAt !== syncBase : localHasData;
-      const remoteChanged = syncBase ? remoteState.updatedAt !== syncBase : remoteHasData;
-
-      remoteMeta = { id: meta.id, eTag: meta.eTag };
-
-      if (!force && localChanged && remoteChanged && state.updatedAt !== remoteState.updatedAt) {
-        syncBlocked = true;
-        setSyncStatus("Konflikt: lokale und OneDrive-Daten wurden geändert");
-        refs.conflictDialog.showModal();
-        return;
-      }
-      if (!force && localChanged && !remoteChanged) {
-        await saveRemoteState(false, false, true);
-        return;
-      }
-
-      state = remoteState;
-      ensureYearSettings(activeYear);
-      syncBlocked = false;
-      saveLocal(false);
-      markSyncBase();
-      renderAll();
-      setSyncStatus(`Mit ${currentAccount.username || "Microsoft"} verbunden`);
-      showToast("OneDrive-Daten geladen.");
-    } catch (error) {
-      console.error(error);
-      setSyncStatus("OneDrive konnte nicht geladen werden");
-      showToast(humanizeGraphError(error), "error");
-    }
-  }
-
-  function scheduleSync() {
-    if (!currentAccount || !navigator.onLine || syncBlocked) return;
-    clearTimeout(syncTimer);
-    syncTimer = setTimeout(() => saveRemoteState(false), 1800);
-  }
-
-  async function syncNow(showMessage) {
-    if (!currentAccount) return handleSyncButton();
-    if (!navigator.onLine) return showToast("Keine Internetverbindung. Lokal ist alles gespeichert.", "warning");
-    if (syncBlocked) return refs.conflictDialog.showModal();
-    await saveRemoteState(false, showMessage);
-  }
-
-  async function saveRemoteState(createIfMissing = false, showMessage = false, forceOverwrite = false) {
-    if (!currentAccount || !navigator.onLine || (syncBlocked && !forceOverwrite)) return;
-    clearTimeout(syncTimer);
-    setSyncStatus("Speichert in OneDrive …");
-    try {
-      let meta = await getRemoteMetadata();
-      if (!forceOverwrite && meta && remoteMeta.eTag && meta.eTag !== remoteMeta.eTag) {
-        syncBlocked = true;
-        setSyncStatus("Konflikt: neuere OneDrive-Daten vorhanden");
-        refs.conflictDialog.showModal();
-        return;
-      }
-      const body = JSON.stringify(state, null, 2);
-      let response;
-      if (meta) {
-        const headers = { "Content-Type": "application/json" };
-        if (meta.eTag) headers["If-Match"] = meta.eTag;
-        response = await graphFetch(`/me/drive/items/${meta.id}/content`, { method: "PUT", headers, body });
-      } else {
-        response = await graphFetch(`/me/drive/special/approot:/${encodeURIComponent(REMOTE_FILE)}:/content`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body
-        });
-      }
-      const saved = await response.json();
-      remoteMeta = { id: saved.id, eTag: saved.eTag };
-      syncBlocked = false;
-      markSyncBase();
-      setSyncStatus(`Gespeichert · ${formatTime(new Date())}`);
-      if (showMessage || createIfMissing) showToast("Mit OneDrive synchronisiert.");
-    } catch (error) {
-      console.error(error);
-      if (error.status === 412) {
-        syncBlocked = true;
-        setSyncStatus("Konflikt: Daten wurden auf einem anderen Gerät geändert");
-        refs.conflictDialog.showModal();
-      } else {
-        setSyncStatus("OneDrive-Speicherung fehlgeschlagen");
-        if (showMessage) showToast(humanizeGraphError(error), "error");
-      }
-    }
-  }
-
-  async function overwriteRemoteWithLocal() {
-    if (!currentAccount || !navigator.onLine) return;
-    try {
-      const meta = await getRemoteMetadata();
-      remoteMeta = meta ? { id: meta.id, eTag: meta.eTag } : { id: null, eTag: null };
-      syncBlocked = false;
-      await saveRemoteState(!meta, true, true);
-    } catch (error) {
-      console.error(error);
-      showToast(humanizeGraphError(error), "error");
-    }
-  }
-
-  function markSyncBase() {
-    localStorage.setItem(SYNC_BASE_KEY, state.updatedAt);
-  }
-
-  function updateSyncUi() {
-    const hasClientId = Boolean(localStorage.getItem(CLIENT_ID_KEY));
-    if (currentAccount) {
-      refs.syncButton.textContent = navigator.onLine ? "Synchronisieren" : "Offline";
-      refs.logoutButton.classList.remove("hidden");
-      if (!refs.syncStatus.textContent || refs.syncStatus.textContent === "Nur lokal gespeichert") setSyncStatus(`Mit ${currentAccount.username || "Microsoft"} verbunden`);
+    if (isDirty) {
+      refs.backupHeadline.textContent = "Neue Änderungen noch nicht für andere Geräte gesichert";
+      refs.backupDetails.textContent = "Auf diesem Gerät sind sie gespeichert. Jetzt eine Sicherung in OneDrive ablegen.";
+      refs.backupStatus.textContent = "Neue Änderungen vorhanden. Vor dem Gerätewechsel bitte sichern.";
+      refs.backupButton.classList.add("attention");
+      refs.backupBarButton.classList.add("attention");
     } else {
-      refs.syncButton.textContent = hasClientId ? "OneDrive verbinden" : "OneDrive einrichten";
-      refs.logoutButton.classList.add("hidden");
-      setSyncStatus(hasClientId ? "Microsoft-Anmeldung noch nicht verbunden" : "Nur lokal gespeichert");
+      const when = safeAt ? formatDateTime(safeAt) : "gerade eben";
+      refs.backupHeadline.textContent = "Aktueller Stand wurde gesichert oder geladen";
+      refs.backupDetails.textContent = `Letzter gesicherter Stand: ${when}`;
+      refs.backupStatus.textContent = `Letzter gesicherter oder geladener Stand: ${when}`;
+      refs.backupButton.classList.remove("attention");
+      refs.backupBarButton.classList.remove("attention");
     }
   }
 
-  function setSyncStatus(text) { refs.syncStatus.textContent = text; }
-
-  function humanizeGraphError(error) {
-    const message = String(error?.message || error);
-    if (message.includes("403")) return `Microsoft hat den Zugriff abgelehnt. Bitte die App-Berechtigung ${getGraphScopes()[0]} prüfen.`;
-    if (message.includes("401")) return "Die Microsoft-Anmeldung ist abgelaufen. Bitte erneut verbinden.";
-    if (message.includes("404")) return "Der OneDrive-App-Ordner konnte nicht gefunden werden.";
-    return "OneDrive konnte nicht synchronisiert werden. Die Daten bleiben lokal erhalten.";
-  }
-
-  function humanizeMsError(error) {
-    const message = String(error?.errorMessage || error?.message || error);
-    if (message.includes("redirect_uri")) return "Die Umleitungsadresse stimmt nicht mit der Microsoft-App-Registrierung überein.";
-    if (message.includes("client_id") || message.includes("application")) return "Die Microsoft-Anwendungs-ID ist falsch oder nicht freigeschaltet.";
-    return "Die Microsoft-Anmeldung konnte nicht abgeschlossen werden.";
+  function formatDateTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "unbekannt";
+    return new Intl.DateTimeFormat("de-DE", {
+      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"
+    }).format(date);
   }
 
   function registerServiceWorker() {
