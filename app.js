@@ -4,13 +4,18 @@
   const STORAGE_KEY = "urlaubskalender-data-v1";
   const SAFE_REVISION_KEY = "urlaubskalender-safe-revision";
   const SAFE_AT_KEY = "urlaubskalender-safe-at";
+  const VIEW_MODE_KEY = "urlaubskalender-view-mode";
+  const FOCUS_DATE_KEY = "urlaubskalender-focus-date";
   const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
   const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const STATUS_NAMES = { planned: "geplant", requested: "beantragt", approved: "genehmigt", taken: "genommen" };
   const TYPE_NAMES = { vacation: "Urlaub", "own-free": "Freier Tag", "partner-free": "Partnerin frei", other: "Sonstiges" };
 
   let state = loadLocalState();
-  let activeYear = new Date().getFullYear();
+  let viewMode = ["year", "month", "week"].includes(localStorage.getItem(VIEW_MODE_KEY)) ? localStorage.getItem(VIEW_MODE_KEY) : "year";
+  let focusDate = validDateKey(localStorage.getItem(FOCUS_DATE_KEY)) ? localStorage.getItem(FOCUS_DATE_KEY) : dateKey(new Date());
+  let activeYear = parseDate(focusDate).getFullYear();
+  let selectedDay = focusDate;
   let toastTimer = null;
 
   const $ = (id) => document.getElementById(id);
@@ -36,18 +41,26 @@
       "entryNote", "entryPreview", "deleteEntryButton", "statusField", "dayPartField", "seriesDialog", "seriesForm", "seriesDialogTitle",
       "seriesId", "seriesType", "seriesWeekday", "seriesInterval", "seriesStart", "seriesEnd", "seriesTitle", "deleteSeriesButton",
       "settingsDialog", "settingsForm", "ownName", "partnerName", "annualLeave", "carryOver", "holidaysEnabled", "settingsYearLabel",
-      "seriesListDialog", "seriesList", "newSeriesFromList", "backupHelpDialog", "legendOwn", "legendPartner"
+      "seriesListDialog", "seriesList", "newSeriesFromList", "backupHelpDialog", "legendOwn", "legendPartner",
+      "dayDialog", "dayDialogTitle", "dayItemList", "addEntryForDayButton",
+      "occurrenceDialog", "occurrenceForm", "occurrenceDialogTitle", "occurrenceSeriesId", "occurrenceOriginalDate",
+      "occurrenceInfo", "occurrenceNewDate", "cancelOccurrenceButton", "resetOccurrenceButton"
     ].forEach(id => refs[id] = $(id));
   }
 
   function bindEvents() {
-    refs.prevYear.addEventListener("click", () => changeYear(activeYear - 1));
-    refs.nextYear.addEventListener("click", () => changeYear(activeYear + 1));
+    refs.prevYear.addEventListener("click", () => navigatePeriod(-1));
+    refs.nextYear.addEventListener("click", () => navigatePeriod(1));
     refs.yearButton.addEventListener("click", () => {
       const year = Number(prompt("Jahr eingeben", String(activeYear)));
-      if (Number.isInteger(year) && year >= 1900 && year <= 2200) changeYear(year);
+      if (Number.isInteger(year) && year >= 1900 && year <= 2200) {
+        const current = parseDate(focusDate);
+        const day = Math.min(current.getDate(), new Date(year, current.getMonth() + 1, 0).getDate());
+        setFocusDate(dateKey(new Date(year, current.getMonth(), day)));
+      }
     });
-    refs.todayButton.addEventListener("click", () => changeYear(new Date().getFullYear()));
+    refs.todayButton.addEventListener("click", () => setFocusDate(dateKey(new Date())));
+    document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", () => setViewMode(button.dataset.view)));
     refs.addEntryButton.addEventListener("click", () => openEntryDialog());
     refs.addSeriesButton.addEventListener("click", () => openSeriesDialog());
     refs.menuButton.addEventListener("click", openMenu);
@@ -74,11 +87,15 @@
     refs.deleteSeriesButton.addEventListener("click", deleteCurrentSeries);
     refs.settingsForm.addEventListener("submit", saveSettingsFromForm);
     refs.entryFilter.addEventListener("change", renderEntryList);
+    refs.addEntryForDayButton.addEventListener("click", () => { refs.dayDialog.close(); openEntryDialog(null, selectedDay); });
+    refs.occurrenceForm.addEventListener("submit", moveOccurrenceFromForm);
+    refs.cancelOccurrenceButton.addEventListener("click", cancelCurrentOccurrence);
+    refs.resetOccurrenceButton.addEventListener("click", resetCurrentOccurrence);
   }
 
   function defaultState() {
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       revision: 0,
       updatedAt: new Date().toISOString(),
       names: { own: "Markus", partner: "Frederike" },
@@ -104,8 +121,17 @@
     next.names = { ...base.names, ...(input?.names || {}) };
     next.yearSettings = input?.yearSettings && typeof input.yearSettings === "object" ? input.yearSettings : {};
     next.entries = Array.isArray(input?.entries) ? input.entries : [];
-    next.series = Array.isArray(input?.series) ? input.series : [];
+    next.series = Array.isArray(input?.series) ? input.series.map(item => ({
+      ...item,
+      overrides: Array.isArray(item?.overrides) ? item.overrides.filter(o => o && o.originalDate).map(o => ({
+        originalDate: o.originalDate,
+        date: o.date || o.originalDate,
+        cancelled: Boolean(o.cancelled),
+        updatedAt: o.updatedAt || new Date().toISOString()
+      })) : []
+    })) : [];
     next.revision = Number.isFinite(Number(input?.revision)) ? Number(input.revision) : 0;
+    next.schemaVersion = 2;
     return next;
   }
 
@@ -134,13 +160,51 @@
   }
 
   function changeYear(year) {
-    activeYear = year;
+    const current = parseDate(focusDate);
+    const day = Math.min(current.getDate(), new Date(year, current.getMonth() + 1, 0).getDate());
+    setFocusDate(dateKey(new Date(year, current.getMonth(), day)));
+  }
+
+  function setViewMode(mode) {
+    if (!["year", "month", "week"].includes(mode)) return;
+    viewMode = mode;
+    localStorage.setItem(VIEW_MODE_KEY, viewMode);
+    renderAll();
+  }
+
+  function setFocusDate(key) {
+    if (!validDateKey(key)) return;
+    focusDate = key;
+    activeYear = parseDate(key).getFullYear();
+    localStorage.setItem(FOCUS_DATE_KEY, focusDate);
     ensureYearSettings(activeYear);
     renderAll();
   }
 
+  function navigatePeriod(direction) {
+    const current = parseDate(focusDate);
+    if (viewMode === "year") {
+      changeYear(activeYear + direction);
+      return;
+    }
+    if (viewMode === "month") {
+      const day = current.getDate();
+      const target = new Date(current.getFullYear(), current.getMonth() + direction, 1);
+      target.setDate(Math.min(day, new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()));
+      setFocusDate(dateKey(target));
+      return;
+    }
+    setFocusDate(dateKey(addDays(current, direction * 7)));
+  }
+
   function renderAll() {
-    refs.yearButton.textContent = activeYear;
+    refs.yearButton.textContent = periodLabel();
+    document.querySelectorAll("[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === viewMode));
+    refs.calendar.className = `calendar-grid view-${viewMode}`;
+    refs.calendar.setAttribute("aria-label", viewMode === "year" ? "Jahreskalender" : viewMode === "month" ? "Monatskalender" : "Wochenkalender");
+    const unit = viewMode === "year" ? "Jahr" : viewMode === "month" ? "Monat" : "Woche";
+    refs.prevYear.setAttribute("aria-label", `Vorheriges ${unit}`);
+    refs.nextYear.setAttribute("aria-label", `Nächstes ${unit}`);
     refs.legendOwn.textContent = `${state.names.own} Urlaub`;
     refs.legendPartner.textContent = `${state.names.partner} frei`;
     const partnerFilter = refs.entryFilter?.querySelector('option[value="partner-free"]');
@@ -173,6 +237,13 @@
   }
 
   function renderCalendar() {
+    if (viewMode === "month") renderMonthCalendar();
+    else if (viewMode === "week") renderWeekCalendar();
+    else renderYearCalendar();
+    refs.calendar.querySelectorAll("[data-date]").forEach(button => button.addEventListener("click", () => openDay(button.dataset.date)));
+  }
+
+  function renderYearCalendar() {
     const today = dateKey(new Date());
     const holidays = getHolidayMap(activeYear);
     let html = "";
@@ -187,14 +258,8 @@
         const date = new Date(activeYear, month, day);
         const key = dateKey(date);
         const info = getDayInfo(key);
-        const classes = ["day-cell"];
-        if ([0,6].includes(date.getDay())) classes.push("weekend");
-        if (key === today) classes.push("today");
-        if (holidays.has(key)) classes.push("holiday");
-        if (info.ownFree && info.partnerFree) classes.push("both-free");
-        const titleParts = [];
-        if (holidays.has(key)) titleParts.push(holidays.get(key));
-        info.items.forEach(item => titleParts.push(item.title));
+        const classes = dayClasses(key, date, info, today, holidays);
+        const titleParts = dayTitleParts(key, info, holidays);
         const halfBadge = info.items.some(i => i.type === "vacation" && i.dayPart === "half" && i.start === i.end) ? `<span class="half-badge">½</span>` : "";
         const markerTypes = [...new Set(info.items.map(item => item.type))];
         const markers = markerTypes.map(type => `<i class="day-marker ${type}"></i>`).join("");
@@ -205,7 +270,93 @@
       html += `</div></article>`;
     }
     refs.calendar.innerHTML = html;
-    refs.calendar.querySelectorAll("[data-date]").forEach(button => button.addEventListener("click", () => openDay(button.dataset.date)));
+  }
+
+  function renderMonthCalendar() {
+    const focus = parseDate(focusDate);
+    const year = focus.getFullYear();
+    const month = focus.getMonth();
+    const today = dateKey(new Date());
+    const holidays = getHolidayMap(year);
+    const first = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const mondayIndex = (first.getDay() + 6) % 7;
+    let html = `<article class="month-card month-detail-card"><div class="month-title detail-title"><h3>${MONTH_NAMES[month]} ${year}</h3><span>Einträge werden direkt im Tag angezeigt</span></div>`;
+    html += `<div class="weekdays detail-weekdays"><span>Montag</span><span>Dienstag</span><span>Mittwoch</span><span>Donnerstag</span><span>Freitag</span><span>Samstag</span><span>Sonntag</span></div><div class="days-grid month-detail-grid">`;
+    for (let i = 0; i < mondayIndex; i++) html += `<span class="day-cell detail-day blank"></span>`;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      const key = dateKey(date);
+      const info = getDayInfo(key);
+      const classes = dayClasses(key, date, info, today, holidays);
+      classes.push("detail-day");
+      const holiday = holidays.get(key);
+      const chips = info.items.slice(0, 4).map(renderCalendarChip).join("");
+      const more = info.items.length > 4 ? `<span class="more-events">+${info.items.length - 4} weitere</span>` : "";
+      html += `<button class="${classes.join(" ")}" type="button" data-date="${key}" title="${escapeAttr(dayTitleParts(key, info, holidays).join(" · "))}">
+        <span class="detail-day-head"><strong>${day}</strong>${holiday ? `<em>${escapeHtml(holiday)}</em>` : ""}</span>
+        <span class="calendar-event-list">${chips}${more}</span>
+      </button>`;
+    }
+    const used = mondayIndex + daysInMonth;
+    const trailing = (7 - (used % 7)) % 7;
+    for (let i = 0; i < trailing; i++) html += `<span class="day-cell detail-day blank"></span>`;
+    html += `</div></article>`;
+    refs.calendar.innerHTML = html;
+  }
+
+  function renderWeekCalendar() {
+    const focus = parseDate(focusDate);
+    const start = startOfWeek(focus);
+    const end = addDays(start, 6);
+    const today = dateKey(new Date());
+    let html = `<article class="week-card card"><div class="week-heading"><div><p class="eyebrow">Kalenderwoche ${isoWeekNumber(focus)}</p><h3>${formatShortRange(dateKey(start), dateKey(end))}</h3></div><span>Alle Termine der Woche</span></div><div class="week-grid">`;
+    for (let offset = 0; offset < 7; offset++) {
+      const date = addDays(start, offset);
+      const key = dateKey(date);
+      const holidays = getHolidayMap(date.getFullYear());
+      const info = getDayInfo(key);
+      const classes = dayClasses(key, date, info, today, holidays);
+      classes.push("week-day");
+      const holiday = holidays.get(key);
+      const chips = info.items.map(renderCalendarChip).join("");
+      html += `<button class="${classes.join(" ")}" type="button" data-date="${key}" title="${escapeAttr(dayTitleParts(key, info, holidays).join(" · "))}">
+        <span class="week-day-head"><span>${WEEKDAY_NAMES[date.getDay()]}</span><strong>${date.getDate()}.${date.getMonth() + 1}.</strong></span>
+        ${holiday ? `<span class="holiday-name">${escapeHtml(holiday)}</span>` : ""}
+        <span class="calendar-event-list">${chips || `<span class="no-events">Keine Einträge</span>`}</span>
+      </button>`;
+    }
+    html += `</div></article>`;
+    refs.calendar.innerHTML = html;
+  }
+
+  function renderCalendarChip(item) {
+    const moved = item.isMoved ? " ↪" : "";
+    const half = item.type === "vacation" && item.dayPart === "half" ? " ½" : "";
+    return `<span class="calendar-event ${item.type}">${escapeHtml(item.title || displayTypeName(item.type))}${moved}${half}</span>`;
+  }
+
+  function dayClasses(key, date, info, today, holidays) {
+    const classes = ["day-cell"];
+    if ([0, 6].includes(date.getDay())) classes.push("weekend");
+    if (key === today) classes.push("today");
+    if (holidays.has(key)) classes.push("holiday");
+    if (info.ownFree && info.partnerFree) classes.push("both-free");
+    return classes;
+  }
+
+  function dayTitleParts(key, info, holidays) {
+    const parts = [];
+    if (holidays.has(key)) parts.push(holidays.get(key));
+    info.items.forEach(item => parts.push(`${item.title}${item.isMoved ? " (verschoben)" : ""}`));
+    return parts;
+  }
+
+  function periodLabel() {
+    const focus = parseDate(focusDate);
+    if (viewMode === "month") return `${MONTH_NAMES[focus.getMonth()]} ${focus.getFullYear()}`;
+    if (viewMode === "week") return `KW ${isoWeekNumber(focus)} · ${formatShortRange(dateKey(startOfWeek(focus)), dateKey(addDays(startOfWeek(focus), 6)))}`;
+    return String(activeYear);
   }
 
   function renderEntryList() {
@@ -250,11 +401,15 @@
       refs.seriesList.innerHTML = `<div class="empty-state">Noch keine Serientermine angelegt.</div>`;
       return;
     }
-    refs.seriesList.innerHTML = series.map(item => `<div class="entry-item">
-      <i class="entry-swatch ${item.type}"></i>
-      <div class="entry-main"><div class="entry-title">${escapeHtml(item.title)}</div><div class="entry-meta">${WEEKDAY_NAMES[item.weekday]} · ${intervalName(item.interval)} · ${formatRange(item.start, item.end)}</div></div>
-      <div class="entry-actions"><button class="small-button" type="button" data-edit-series="${item.id}">Bearbeiten</button></div>
-    </div>`).join("");
+    refs.seriesList.innerHTML = series.map(item => {
+      const exceptions = Array.isArray(item.overrides) ? item.overrides.length : 0;
+      const exceptionText = exceptions ? ` · ${exceptions} Ausnahme${exceptions === 1 ? "" : "n"}` : "";
+      return `<div class="entry-item">
+        <i class="entry-swatch ${item.type}"></i>
+        <div class="entry-main"><div class="entry-title">${escapeHtml(item.title)}</div><div class="entry-meta">${WEEKDAY_NAMES[item.weekday]} · ${intervalName(item.interval)} · ${formatRange(item.start, item.end)}${exceptionText}</div></div>
+        <div class="entry-actions"><button class="small-button" type="button" data-edit-series="${item.id}">Bearbeiten</button></div>
+      </div>`;
+    }).join("");
     refs.seriesList.querySelectorAll("[data-edit-series]").forEach(btn => btn.addEventListener("click", () => {
       refs.seriesListDialog.close();
       openSeriesDialog(btn.dataset.editSeries);
@@ -262,9 +417,93 @@
   }
 
   function openDay(date) {
-    const directEntries = state.entries.filter(e => date >= e.start && date <= e.end);
-    if (directEntries.length === 1) openEntryDialog(directEntries[0].id);
-    else openEntryDialog(null, date);
+    selectedDay = date;
+    const info = getDayInfo(date);
+    if (!info.items.length) {
+      openEntryDialog(null, date);
+      return;
+    }
+    renderDayDialog(date, info);
+    refs.dayDialog.showModal();
+  }
+
+  function renderDayDialog(date, info = getDayInfo(date)) {
+    selectedDay = date;
+    refs.dayDialogTitle.textContent = new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }).format(parseDate(date));
+    const holiday = getHolidayMap(parseDate(date).getFullYear()).get(date);
+    const rows = [];
+    if (holiday) rows.push(`<div class="entry-item"><i class="entry-swatch holiday-swatch"></i><div class="entry-main"><div class="entry-title">${escapeHtml(holiday)}</div><div class="entry-meta">Gesetzlicher Feiertag in Niedersachsen</div></div></div>`);
+    info.items.forEach(item => {
+      const isSeriesItem = item.source === "series" || item.source === "series-exception";
+      const meta = isSeriesItem
+        ? item.source === "series-exception" ? "Ausnahme von einem Serientermin" : `Serientermin${item.isMoved ? ` · verschoben von ${formatSingleDate(item.originalDate)}` : ""}`
+        : `${item.type === "vacation" ? STATUS_NAMES[item.status] || "geplant" : "Einzeltermin"}${item.start !== item.end ? ` · ${formatRange(item.start, item.end)}` : ""}`;
+      const action = isSeriesItem
+        ? `<button class="small-button" type="button" data-edit-occurrence="${item.seriesId}" data-original-date="${item.originalDate}">Ausnahme bearbeiten</button>`
+        : `<button class="small-button" type="button" data-edit-entry="${item.id}">Bearbeiten</button>`;
+      rows.push(`<div class="entry-item"><i class="entry-swatch ${item.type}"></i><div class="entry-main"><div class="entry-title">${escapeHtml(item.title)}</div><div class="entry-meta">${escapeHtml(meta)}</div></div><div class="entry-actions">${action}</div></div>`);
+    });
+    refs.dayItemList.innerHTML = rows.join("");
+    refs.dayItemList.querySelectorAll("[data-edit-entry]").forEach(button => button.addEventListener("click", () => { refs.dayDialog.close(); openEntryDialog(button.dataset.editEntry); }));
+    refs.dayItemList.querySelectorAll("[data-edit-occurrence]").forEach(button => button.addEventListener("click", () => { refs.dayDialog.close(); openOccurrenceDialog(button.dataset.editOccurrence, button.dataset.originalDate); }));
+  }
+
+  function openOccurrenceDialog(seriesId, originalDate) {
+    const series = state.series.find(item => item.id === seriesId);
+    if (!series) return;
+    const override = getSeriesOverride(series, originalDate);
+    const currentDate = override && !override.cancelled ? override.date : originalDate;
+    refs.occurrenceSeriesId.value = seriesId;
+    refs.occurrenceOriginalDate.value = originalDate;
+    refs.occurrenceDialogTitle.textContent = series.title || "Serientermin verschieben";
+    refs.occurrenceInfo.textContent = `Ursprünglicher Termin: ${formatSingleDate(originalDate)}${override?.cancelled ? " · dieser Termin ist derzeit ausgenommen" : override && override.date !== originalDate ? ` · aktuell am ${formatSingleDate(override.date)}` : ""}.`;
+    refs.occurrenceNewDate.value = currentDate;
+    refs.resetOccurrenceButton.classList.toggle("hidden", !override);
+    refs.occurrenceDialog.showModal();
+  }
+
+  function moveOccurrenceFromForm(event) {
+    event.preventDefault();
+    const series = state.series.find(item => item.id === refs.occurrenceSeriesId.value);
+    const originalDate = refs.occurrenceOriginalDate.value;
+    const newDate = refs.occurrenceNewDate.value;
+    if (!series || !validDateKey(originalDate) || !validDateKey(newDate)) return showToast("Der neue Termin ist nicht gültig.", "error");
+    if (newDate < series.start || newDate > series.end) {
+      const proceed = confirm("Der neue Tag liegt außerhalb des eingestellten Serienzeitraums. Trotzdem verschieben?");
+      if (!proceed) return;
+    }
+    setSeriesOverride(series, { originalDate, date: newDate, cancelled: false, updatedAt: new Date().toISOString() });
+    saveLocal(true);
+    refs.occurrenceDialog.close();
+    focusDate = newDate;
+    activeYear = parseDate(newDate).getFullYear();
+    ensureYearSettings(activeYear);
+    localStorage.setItem(FOCUS_DATE_KEY, focusDate);
+    renderAll();
+    showToast(`Serientermin auf ${formatSingleDate(newDate)} verschoben.`);
+  }
+
+  function cancelCurrentOccurrence() {
+    const series = state.series.find(item => item.id === refs.occurrenceSeriesId.value);
+    const originalDate = refs.occurrenceOriginalDate.value;
+    if (!series || !confirm("Soll nur dieser einzelne Serientermin entfallen?")) return;
+    setSeriesOverride(series, { originalDate, date: originalDate, cancelled: true, updatedAt: new Date().toISOString() });
+    saveLocal(true);
+    refs.occurrenceDialog.close();
+    renderAll();
+    showToast("Der einzelne Serientermin wurde ausgenommen.");
+  }
+
+  function resetCurrentOccurrence() {
+    const series = state.series.find(item => item.id === refs.occurrenceSeriesId.value);
+    const originalDate = refs.occurrenceOriginalDate.value;
+    if (!series) return;
+    series.overrides = (series.overrides || []).filter(item => item.originalDate !== originalDate);
+    series.updatedAt = new Date().toISOString();
+    saveLocal(true);
+    refs.occurrenceDialog.close();
+    renderAll();
+    showToast("Die Ausnahme wurde zurückgesetzt.");
   }
 
   function openEntryDialog(id = null, date = null) {
@@ -376,6 +615,7 @@
       start: refs.seriesStart.value,
       end: refs.seriesEnd.value,
       title: refs.seriesTitle.value.trim(),
+      overrides: existing?.overrides || [],
       createdAt: existing?.createdAt || now,
       updatedAt: now
     };
@@ -428,9 +668,37 @@
   }
 
   function getDayInfo(key) {
-    const direct = state.entries.filter(e => key >= e.start && key <= e.end).map(e => ({ ...e, title: e.note || displayTypeName(e.type) }));
-    const recurring = state.series.filter(s => seriesOccursOn(s, key)).map(s => ({ ...s, dayPart: "full" }));
-    const items = [...direct, ...recurring];
+    const direct = state.entries
+      .filter(e => key >= e.start && key <= e.end)
+      .map(e => ({ ...e, source: "entry", title: e.note || displayTypeName(e.type) }));
+    const recurring = state.series.flatMap(series => getSeriesOccurrencesOn(series, key).map(occurrence => ({
+      ...series,
+      id: `${series.id}:${occurrence.originalDate}`,
+      seriesId: series.id,
+      originalDate: occurrence.originalDate,
+      currentDate: key,
+      source: "series",
+      isMoved: occurrence.originalDate !== key,
+      dayPart: "full",
+      title: series.title || displayTypeName(series.type)
+    })));
+    const exceptionNotices = state.series.flatMap(series => (series.overrides || [])
+      .filter(override => override.originalDate === key && (override.cancelled || override.date !== override.originalDate))
+      .map(override => ({
+        id: `${series.id}:${override.originalDate}:exception`,
+        seriesId: series.id,
+        originalDate: override.originalDate,
+        currentDate: key,
+        source: "series-exception",
+        type: "other",
+        seriesType: series.type,
+        isCancelled: override.cancelled,
+        dayPart: "full",
+        title: override.cancelled
+          ? `${series.title || displayTypeName(series.type)} entfällt`
+          : `${series.title || displayTypeName(series.type)} verschoben auf ${formatSingleDate(override.date)}`
+      })));
+    const items = [...direct, ...recurring, ...exceptionNotices];
     return {
       items,
       ownFree: items.some(i => ["own-free", "vacation"].includes(i.type)) || isWeekendOrHoliday(key),
@@ -488,6 +756,27 @@
   }
 
   function seriesOccursOn(series, key) {
+    return getSeriesOccurrencesOn(series, key).length > 0;
+  }
+
+  function getSeriesOccurrencesOn(series, key) {
+    const occurrences = [];
+    const overrides = Array.isArray(series.overrides) ? series.overrides : [];
+    overrides.forEach(override => {
+      if (!override.cancelled && override.date === key && override.originalDate !== key) {
+        occurrences.push({ originalDate: override.originalDate, moved: true });
+      }
+    });
+    if (baseSeriesOccursOn(series, key)) {
+      const override = getSeriesOverride(series, key);
+      if (!override || (!override.cancelled && override.date === key)) {
+        occurrences.push({ originalDate: key, moved: false });
+      }
+    }
+    return occurrences;
+  }
+
+  function baseSeriesOccursOn(series, key) {
     if (key < series.start || key > series.end) return false;
     const date = parseDate(key);
     if (date.getDay() !== Number(series.weekday)) return false;
@@ -497,12 +786,24 @@
     return weeks % Number(series.interval || 1) === 0;
   }
 
+  function getSeriesOverride(series, originalDate) {
+    return (series.overrides || []).find(item => item.originalDate === originalDate) || null;
+  }
+
+  function setSeriesOverride(series, override) {
+    series.overrides = Array.isArray(series.overrides) ? series.overrides : [];
+    series.overrides = series.overrides.filter(item => item.originalDate !== override.originalDate);
+    if (!(override.date === override.originalDate && !override.cancelled)) series.overrides.push(override);
+    series.updatedAt = new Date().toISOString();
+  }
+
   function firstWeekdayOnOrAfter(date, weekday) {
     const result = new Date(date);
     const diff = (weekday - result.getDay() + 7) % 7;
     result.setDate(result.getDate() + diff);
     return result;
   }
+
 
   function calculateCommonFreeRanges(year) {
     const start = `${year}-01-01`;
@@ -708,6 +1009,40 @@
     const formatter = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
     if (start === end) return formatter.format(parseDate(start));
     return `${formatter.format(parseDate(start))} bis ${formatter.format(parseDate(end))}`;
+  }
+
+  function formatSingleDate(key) {
+    return new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" }).format(parseDate(key));
+  }
+
+  function formatShortRange(start, end) {
+    const a = parseDate(start);
+    const b = parseDate(end);
+    const sameYear = a.getFullYear() === b.getFullYear();
+    const sameMonth = sameYear && a.getMonth() === b.getMonth();
+    if (sameMonth) return `${a.getDate()}.–${b.getDate()}. ${MONTH_NAMES[a.getMonth()]} ${a.getFullYear()}`;
+    if (sameYear) return `${a.getDate()}. ${MONTH_NAMES[a.getMonth()]}–${b.getDate()}. ${MONTH_NAMES[b.getMonth()]} ${a.getFullYear()}`;
+    return `${formatSingleDate(start)} bis ${formatSingleDate(end)}`;
+  }
+
+  function startOfWeek(date) {
+    const result = new Date(date);
+    result.setDate(result.getDate() - ((result.getDay() + 6) % 7));
+    return result;
+  }
+
+  function isoWeekNumber(date) {
+    const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const day = target.getUTCDay() || 7;
+    target.setUTCDate(target.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+    return Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
+  }
+
+  function validDateKey(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return false;
+    const parsed = parseDate(value);
+    return !Number.isNaN(parsed.getTime()) && dateKey(parsed) === value;
   }
 
   function formatTime(date) { return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(date); }

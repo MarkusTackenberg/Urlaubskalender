@@ -35,6 +35,11 @@
         <button id="yearButton" class="year-label" type="button"></button>
         <button id="nextYear" class="button icon-button" type="button" aria-label="Nächstes Jahr">›</button>
       </div>
+      <div class="view-switcher" role="group" aria-label="Kalenderansicht">
+        <button class="view-button active" type="button" data-view="year">Jahr</button>
+        <button class="view-button" type="button" data-view="month">Monat</button>
+        <button class="view-button" type="button" data-view="week">Woche</button>
+      </div>
       <div class="toolbar-actions">
         <button id="todayButton" class="button secondary" type="button">Heute</button>
         <button id="addEntryButton" class="button primary" type="button">Eintrag</button>
@@ -63,7 +68,7 @@
       <span><i class="legend-dot holiday"></i>Feiertag</span>
     </section>
 
-    <section id="calendar" class="calendar-grid" aria-label="Jahreskalender"></section>
+    <section id="calendar" class="calendar-grid" aria-label="Kalender"></section>
 
     <section class="below-grid">
       <article class="card">
@@ -278,6 +283,48 @@
       <button class="button secondary" type="button" data-close-dialog="seriesListDialog">Schließen</button>
       <button id="newSeriesFromList" class="button primary" type="button">Neue Serie</button>
     </div>
+  </dialog>
+
+  <dialog id="dayDialog" class="modal wide-modal">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">Tagesübersicht</p>
+        <h2 id="dayDialogTitle">Einträge</h2>
+      </div>
+      <button class="button icon-button" type="button" data-close-dialog="dayDialog" aria-label="Schließen">×</button>
+    </div>
+    <div id="dayItemList" class="entry-list"></div>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button class="button secondary" type="button" data-close-dialog="dayDialog">Schließen</button>
+      <button id="addEntryForDayButton" class="button primary" type="button">Eintrag hinzufügen</button>
+    </div>
+  </dialog>
+
+  <dialog id="occurrenceDialog" class="modal">
+    <form id="occurrenceForm" method="dialog">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Einzelner Serientermin</p>
+          <h2 id="occurrenceDialogTitle">Termin verschieben</h2>
+        </div>
+        <button class="button icon-button" type="button" data-close-dialog="occurrenceDialog" aria-label="Schließen">×</button>
+      </div>
+      <input id="occurrenceSeriesId" type="hidden">
+      <input id="occurrenceOriginalDate" type="hidden">
+      <p id="occurrenceInfo" class="form-hint"></p>
+      <label>Neuer Tag
+        <input id="occurrenceNewDate" class="input" type="date" required>
+      </label>
+      <p class="form-hint">Nur dieser eine Termin wird verschoben. Die übrige Serie bleibt unverändert.</p>
+      <div class="modal-actions stack-mobile">
+        <button id="cancelOccurrenceButton" class="button danger" type="button">Diesen Termin entfallen lassen</button>
+        <button id="resetOccurrenceButton" class="button secondary hidden" type="button">Ausnahme zurücksetzen</button>
+        <span class="spacer"></span>
+        <button class="button secondary" type="button" data-close-dialog="occurrenceDialog">Abbrechen</button>
+        <button class="button primary" type="submit" value="default">Termin verschieben</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="backupHelpDialog" class="modal wide-modal">

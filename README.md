@@ -13,6 +13,8 @@ Persönlicher Urlaubskalender für Windows, iPhone und iPad. Die Web-App läuft 
 - wiederkehrende freie Tage und Serientermine
 - freie Tage der Partnerin
 - Anzeige gemeinsamer freier Zeiträume
+- umschaltbare Jahres-, Monats- und Wochenansicht
+- einzelne Termine einer Serie verschieben, ausnehmen oder zurücksetzen
 - Jahresübersicht und Druckansicht
 - lokale Speicherung im Browser
 - Sicherung und Wiederherstellung über eine JSON-Datei
@@ -46,3 +48,12 @@ Die Dateien `index.html`, `app.js`, `styles.css`, `service-worker.js`, `manifest
 ## Datenschutz
 
 GitHub enthält nur den Programmcode. Persönliche Urlaubsdaten werden nicht in das öffentliche Repository übertragen. Sie liegen lokal im Browser und in der Sicherungsdatei, die der Nutzer selbst in OneDrive ablegt.
+
+
+## Kalenderansichten
+
+Oben kann zwischen `Jahr`, `Monat` und `Woche` umgeschaltet werden. In der Monats- und Wochenansicht werden die Bezeichnungen der Einträge direkt im Kalender angezeigt. Mit den Pfeiltasten wird je nach Ansicht ein Jahr, ein Monat oder eine Woche vor- beziehungsweise zurückgeschaltet.
+
+## Einzelnen Termin einer Serie verschieben
+
+Den betreffenden Tag im Kalender öffnen, beim Serientermin `Ausnahme bearbeiten` wählen und den neuen Tag eintragen. Nur dieser eine Termin wird verschoben. Am ursprünglichen Tag bleibt ein Hinweis stehen, damit die Änderung nachvollziehbar ist. Die Ausnahme kann später zurückgesetzt werden.

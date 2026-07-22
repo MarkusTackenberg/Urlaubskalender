@@ -220,3 +220,153 @@ label { display: grid; gap: .35rem; color: var(--muted); font-size: .8rem; font-
   .backup-actions .button { width: 100%; }
   .header-actions #backupButton { display: none; }
 }
+
+/* Umschaltbare Jahres-, Monats- und Wochenansicht */
+.view-switcher {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-soft);
+}
+.view-button {
+  border: 0;
+  border-radius: 8px;
+  padding: .58rem .78rem;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+  cursor: pointer;
+}
+.view-button.active {
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: 0 2px 7px rgba(31, 41, 37, .12);
+}
+.calendar-grid.view-month,
+.calendar-grid.view-week { grid-template-columns: 1fr; }
+.month-detail-card { overflow-x: auto; }
+.detail-title { min-width: 840px; align-items: center; }
+.detail-title h3 { font-size: 1.25rem; }
+.detail-weekdays,
+.month-detail-grid { min-width: 840px; }
+.detail-weekdays span { font-size: .72rem; }
+.detail-day {
+  min-height: 118px;
+  padding: .4rem;
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+}
+.detail-day-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .35rem;
+}
+.detail-day-head strong { font-size: .85rem; }
+.detail-day-head em {
+  max-width: 78%;
+  color: var(--holiday);
+  font-size: .6rem;
+  font-style: normal;
+  font-weight: 800;
+  text-align: right;
+  line-height: 1.15;
+}
+.calendar-event-list {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  margin-top: auto;
+}
+.calendar-event {
+  display: block;
+  width: 100%;
+  padding: .22rem .3rem;
+  border-radius: 5px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: .62rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #22302b;
+  background: #f3eadf;
+}
+.calendar-event.vacation { background: var(--vacation-soft); color: #244d8d; }
+.calendar-event.own-free { background: var(--own-free-soft); color: #4e5964; }
+.calendar-event.partner-free { background: var(--partner-soft); color: #236a45; }
+.calendar-event.other { background: #f3e4ce; color: #805012; }
+.more-events,
+.no-events {
+  color: var(--muted);
+  font-size: .62rem;
+  font-weight: 700;
+}
+.week-card { padding: .85rem; }
+.week-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  margin: .1rem .2rem .8rem;
+}
+.week-heading h3 { margin: 0; font-size: 1.25rem; }
+.week-heading > span { color: var(--muted); font-size: .78rem; }
+.week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: .5rem;
+}
+.week-day {
+  min-height: 210px;
+  padding: .65rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+.week-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: .4rem;
+}
+.week-day-head span { color: var(--muted); font-size: .72rem; font-weight: 800; }
+.week-day-head strong { font-size: 1rem; }
+.holiday-name {
+  color: var(--holiday);
+  font-size: .68rem;
+  font-weight: 850;
+  line-height: 1.2;
+}
+.holiday-swatch { background: var(--holiday); }
+
+@media (max-width: 980px) {
+  .toolbar { flex-wrap: wrap; }
+  .view-switcher { order: 3; }
+  .week-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .week-day { min-height: 150px; }
+}
+
+@media (max-width: 720px) {
+  .view-switcher { order: 0; width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); }
+  .view-button { width: 100%; }
+  .week-heading { align-items: flex-start; flex-direction: column; }
+  .week-grid { grid-template-columns: 1fr; }
+  .week-day { min-height: 112px; }
+  .detail-day { min-height: 105px; }
+}
+
+@media print {
+  .view-switcher { display: none !important; }
+  .calendar-grid.view-month,
+  .calendar-grid.view-week { display: block; }
+  .month-detail-card { overflow: visible; }
+  .detail-title,
+  .detail-weekdays,
+  .month-detail-grid { min-width: 0; }
+  .week-grid { grid-template-columns: repeat(7, 1fr); }
+  .week-day { min-height: 130px; }
+}
