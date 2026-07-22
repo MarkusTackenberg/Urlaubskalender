@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#244b3f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Urlaubskalender">
+  <meta name="description" content="Persönlicher Urlaubskalender mit OneDrive-Synchronisierung">
+  <title>Urlaubskalender</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="styles.css">
+  <script
+    src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"
+    integrity="sha384-PARf28kmic36Ve+O3DnUerRXFtOQ7ZDqRDGpLcbljly5/N39T2OV3kt3QsWOKeAX"
+    crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">Persönlicher Kalender</p>
+      <h1>Urlaubskalender</h1>
+    </div>
+    <div class="header-actions">
+      <button id="syncButton" class="button secondary" type="button">OneDrive verbinden</button>
+      <button id="menuButton" class="button icon-button" type="button" aria-label="Menü öffnen">☰</button>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <section class="toolbar card">
+      <div class="year-switcher">
+        <button id="prevYear" class="button icon-button" type="button" aria-label="Vorheriges Jahr">‹</button>
+        <button id="yearButton" class="year-label" type="button"></button>
+        <button id="nextYear" class="button icon-button" type="button" aria-label="Nächstes Jahr">›</button>
+      </div>
+      <div class="toolbar-actions">
+        <button id="todayButton" class="button secondary" type="button">Heute</button>
+        <button id="addEntryButton" class="button primary" type="button">Eintrag</button>
+        <button id="addSeriesButton" class="button secondary" type="button">Serie</button>
+      </div>
+    </section>
+
+    <section id="summaryCards" class="summary-grid" aria-label="Urlaubskonto"></section>
+
+    <section class="legend card" aria-label="Legende">
+      <span><i class="legend-dot vacation"></i><span id="legendOwn">Mein Urlaub</span></span>
+      <span><i class="legend-dot own-free"></i>Mein freier Tag</span>
+      <span><i class="legend-dot partner-free"></i><span id="legendPartner">Frederike frei</span></span>
+      <span><i class="legend-dot both-free"></i>Beide frei</span>
+      <span><i class="legend-dot holiday"></i>Feiertag</span>
+    </section>
+
+    <section id="calendar" class="calendar-grid" aria-label="Jahreskalender"></section>
+
+    <section class="below-grid">
+      <article class="card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Planung</p>
+            <h2>Einträge im Jahr</h2>
+          </div>
+          <select id="entryFilter" class="select compact" aria-label="Einträge filtern">
+            <option value="all">Alle</option>
+            <option value="vacation">Mein Urlaub</option>
+            <option value="own-free">Meine freien Tage</option>
+            <option value="partner-free">Frederike frei</option>
+            <option value="other">Sonstige</option>
+          </select>
+        </div>
+        <div id="entryList" class="entry-list"></div>
+      </article>
+
+      <article class="card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Überschneidungen</p>
+            <h2>Gemeinsam frei</h2>
+          </div>
+        </div>
+        <div id="commonFreeList" class="common-list"></div>
+      </article>
+    </section>
+  </main>
+
+  <aside id="sideMenu" class="side-menu" aria-hidden="true">
+    <div class="side-menu-backdrop" data-close-menu></div>
+    <div class="side-menu-panel">
+      <div class="side-menu-header">
+        <h2>Menü</h2>
+        <button class="button icon-button" type="button" data-close-menu aria-label="Menü schließen">×</button>
+      </div>
+      <div id="syncStatus" class="sync-status">Nur lokal gespeichert</div>
+      <button id="settingsButton" class="menu-item" type="button">Einstellungen</button>
+      <button id="seriesListButton" class="menu-item" type="button">Serientermine verwalten</button>
+      <button id="manualSyncButton" class="menu-item" type="button">Jetzt synchronisieren</button>
+      <button id="exportButton" class="menu-item" type="button">Datensicherung herunterladen</button>
+      <label class="menu-item file-label">Datensicherung einlesen<input id="importInput" type="file" accept="application/json,.json"></label>
+      <button id="printButton" class="menu-item" type="button">Jahresübersicht drucken</button>
+      <button id="setupButton" class="menu-item" type="button">OneDrive-Einrichtung</button>
+      <button id="logoutButton" class="menu-item danger-text hidden" type="button">Microsoft-Verbindung trennen</button>
+    </div>
+  </aside>
+
+  <dialog id="entryDialog" class="modal">
+    <form id="entryForm" method="dialog">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Kalendereintrag</p>
+          <h2 id="entryDialogTitle">Eintrag hinzufügen</h2>
+        </div>
+        <button class="button icon-button" type="button" data-close-dialog="entryDialog" aria-label="Schließen">×</button>
+      </div>
+      <input id="entryId" type="hidden">
+      <div class="form-grid">
+        <label>Art
+          <select id="entryType" class="select" required>
+            <option value="vacation">Mein Urlaub</option>
+            <option value="own-free">Mein freier Tag</option>
+            <option value="partner-free">Frederike frei</option>
+            <option value="other">Sonstiger Eintrag</option>
+          </select>
+        </label>
+        <label id="statusField">Status
+          <select id="entryStatus" class="select">
+            <option value="planned">Geplant</option>
+            <option value="requested">Beantragt</option>
+            <option value="approved">Genehmigt</option>
+            <option value="taken">Genommen</option>
+          </select>
+        </label>
+        <label>Von
+          <input id="entryStart" class="input" type="date" required>
+        </label>
+        <label>Bis
+          <input id="entryEnd" class="input" type="date" required>
+        </label>
+        <label id="dayPartField">Umfang
+          <select id="entryDayPart" class="select">
+            <option value="full">Ganzer Tag / Zeitraum</option>
+            <option value="half">Halber Urlaubstag</option>
+          </select>
+        </label>
+        <label class="full-width">Bezeichnung oder Bemerkung
+          <input id="entryNote" class="input" type="text" maxlength="120" placeholder="z. B. Sommerurlaub Nordsee">
+        </label>
+      </div>
+      <div id="entryPreview" class="form-hint"></div>
+      <div class="modal-actions">
+        <button id="deleteEntryButton" class="button danger hidden" type="button">Löschen</button>
+        <span class="spacer"></span>
+        <button class="button secondary" type="button" data-close-dialog="entryDialog">Abbrechen</button>
+        <button id="saveEntryButton" class="button primary" type="submit" value="default">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="seriesDialog" class="modal">
+    <form id="seriesForm" method="dialog">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Wiederkehrender Termin</p>
+          <h2 id="seriesDialogTitle">Serie anlegen</h2>
+        </div>
+        <button class="button icon-button" type="button" data-close-dialog="seriesDialog" aria-label="Schließen">×</button>
+      </div>
+      <input id="seriesId" type="hidden">
+      <div class="form-grid">
+        <label>Art
+          <select id="seriesType" class="select" required>
+            <option value="own-free">Mein freier Tag</option>
+            <option value="partner-free">Frederike frei</option>
+            <option value="other">Sonstige Serie</option>
+          </select>
+        </label>
+        <label>Wochentag
+          <select id="seriesWeekday" class="select" required>
+            <option value="1">Montag</option>
+            <option value="2">Dienstag</option>
+            <option value="3">Mittwoch</option>
+            <option value="4">Donnerstag</option>
+            <option value="5">Freitag</option>
+            <option value="6">Samstag</option>
+            <option value="0">Sonntag</option>
+          </select>
+        </label>
+        <label>Wiederholung
+          <select id="seriesInterval" class="select">
+            <option value="1">Jede Woche</option>
+            <option value="2">Alle 2 Wochen</option>
+            <option value="3">Alle 3 Wochen</option>
+            <option value="4">Alle 4 Wochen</option>
+          </select>
+        </label>
+        <label>Beginn
+          <input id="seriesStart" class="input" type="date" required>
+        </label>
+        <label>Ende
+          <input id="seriesEnd" class="input" type="date" required>
+        </label>
+        <label class="full-width">Bezeichnung
+          <input id="seriesTitle" class="input" type="text" maxlength="100" placeholder="z. B. freier Montag" required>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button id="deleteSeriesButton" class="button danger hidden" type="button">Löschen</button>
+        <span class="spacer"></span>
+        <button class="button secondary" type="button" data-close-dialog="seriesDialog">Abbrechen</button>
+        <button class="button primary" type="submit" value="default">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog" class="modal">
+    <form id="settingsForm" method="dialog">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Grundeinstellungen</p>
+          <h2>Kalender einstellen</h2>
+        </div>
+        <button class="button icon-button" type="button" data-close-dialog="settingsDialog" aria-label="Schließen">×</button>
+      </div>
+      <div class="form-grid">
+        <label>Mein Name
+          <input id="ownName" class="input" type="text" maxlength="40" required>
+        </label>
+        <label>Name der Partnerin
+          <input id="partnerName" class="input" type="text" maxlength="40" required>
+        </label>
+        <label>Jahresurlaub <span id="settingsYearLabel"></span>
+          <input id="annualLeave" class="input" type="number" min="0" max="365" step="0.5" required>
+        </label>
+        <label>Resturlaub aus Vorjahr
+          <input id="carryOver" class="input" type="number" min="0" max="365" step="0.5" required>
+        </label>
+        <fieldset class="full-width weekday-fieldset">
+          <legend>Regelmäßige Arbeitstage</legend>
+          <label><input type="checkbox" name="workday" value="1"> Mo</label>
+          <label><input type="checkbox" name="workday" value="2"> Di</label>
+          <label><input type="checkbox" name="workday" value="3"> Mi</label>
+          <label><input type="checkbox" name="workday" value="4"> Do</label>
+          <label><input type="checkbox" name="workday" value="5"> Fr</label>
+          <label><input type="checkbox" name="workday" value="6"> Sa</label>
+          <label><input type="checkbox" name="workday" value="0"> So</label>
+        </fieldset>
+        <label class="checkbox-label full-width"><input id="holidaysEnabled" type="checkbox"> Gesetzliche Feiertage in Niedersachsen automatisch berücksichtigen</label>
+      </div>
+      <p class="form-hint">Freie Montage oder andere wechselnde freie Tage legst du als Serientermin an. Sie werden bei der Urlaubsberechnung automatisch herausgerechnet.</p>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button class="button secondary" type="button" data-close-dialog="settingsDialog">Abbrechen</button>
+        <button class="button primary" type="submit" value="default">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="seriesListDialog" class="modal wide-modal">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">Wiederkehrende Termine</p>
+        <h2>Serientermine verwalten</h2>
+      </div>
+      <button class="button icon-button" type="button" data-close-dialog="seriesListDialog" aria-label="Schließen">×</button>
+    </div>
+    <div id="seriesList" class="entry-list"></div>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button class="button secondary" type="button" data-close-dialog="seriesListDialog">Schließen</button>
+      <button id="newSeriesFromList" class="button primary" type="button">Neue Serie</button>
+    </div>
+  </dialog>
+
+  <dialog id="setupDialog" class="modal wide-modal">
+    <form id="setupForm" method="dialog">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Microsoft-Anmeldung</p>
+          <h2>OneDrive einrichten</h2>
+        </div>
+        <button class="button icon-button" type="button" data-close-dialog="setupDialog" aria-label="Schließen">×</button>
+      </div>
+      <div class="setup-copy">
+        <p>Für die Synchronisierung braucht der Kalender die <strong>Anwendungs-ID</strong> einer kostenlosen Microsoft-App-Registrierung. Die ID ist kein Passwort und darf im Browser gespeichert werden.</p>
+        <label>Anwendungs-ID (Client-ID)
+          <input id="clientIdInput" class="input" type="text" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000">
+        </label>
+        <label>Art des OneDrive-Kontos
+          <select id="permissionModeInput" class="select">
+            <option value="personal">Privates Microsoft-Konto, nur App-Ordner</option>
+            <option value="business">Geschäftliches Microsoft-Konto</option>
+          </select>
+        </label>
+        <label>Umleitungsadresse für Microsoft
+          <input id="redirectUriInput" class="input" type="text" readonly>
+        </label>
+        <ol>
+          <li>Microsoft Entra Admin Center öffnen und eine neue App-Registrierung anlegen.</li>
+          <li>Kontotyp: persönliche Microsoft-Konten sowie Geschäfts- und Schulkonten zulassen.</li>
+          <li>Unter „Authentifizierung“ die oben angezeigte Adresse als <strong>Single-Page-Anwendung</strong> eintragen.</li>
+          <li>Bei einem privaten Konto die delegierte Berechtigung <code>Files.ReadWrite.AppFolder</code> hinzufügen. Bei einem geschäftlichen Konto <code>Files.ReadWrite</code> verwenden.</li>
+          <li>Die Anwendungs-ID hier eintragen und speichern.</li>
+        </ol>
+        <p class="form-hint">Bei einem privaten Konto erhält die App nur Zugriff auf ihren eigenen OneDrive-App-Ordner. Bei einem Geschäftskonto ist technisch die breitere Berechtigung Files.ReadWrite nötig; der Programmcode greift trotzdem ausschließlich auf den App-Ordner zu.</p>
+      </div>
+      <div class="modal-actions">
+        <button id="clearClientIdButton" class="button danger" type="button">ID entfernen</button>
+        <span class="spacer"></span>
+        <button class="button secondary" type="button" data-close-dialog="setupDialog">Abbrechen</button>
+        <button class="button primary" type="submit" value="default">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="conflictDialog" class="modal">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">Synchronisierung angehalten</p>
+        <h2>Neuere Daten in OneDrive</h2>
+      </div>
+    </div>
+    <p>Auf einem anderen Gerät wurden Daten geändert. Damit nichts überschrieben wird, speichert der Kalender jetzt nicht automatisch weiter.</p>
+    <p>Du kannst zuerst deine lokalen Daten als Sicherung herunterladen und anschließend den neueren OneDrive-Stand laden.</p>
+    <div class="modal-actions stack-mobile">
+      <button id="conflictExportButton" class="button secondary" type="button">Lokale Sicherung laden</button>
+      <span class="spacer"></span>
+      <button id="conflictKeepLocalButton" class="button danger" type="button">Lokalen Stand behalten</button>
+      <button id="conflictLoadRemoteButton" class="button primary" type="button">OneDrive-Stand übernehmen</button>
+    </div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
