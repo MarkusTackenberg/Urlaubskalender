@@ -12,6 +12,7 @@ Persönlicher Urlaubskalender für Windows, iPhone und iPad. Die Web-App läuft 
 - individuelle Arbeitstage
 - wiederkehrende freie Tage und Serientermine
 - freie Tage der Partnerin
+- zusätzliche Eintragsarten: Krank, Samstagsarbeit und Ausgleichsfrei
 - Anzeige gemeinsamer freier Zeiträume
 - umschaltbare Jahres-, Monats- und Wochenansicht
 - einzelne Termine einer Serie verschieben, ausnehmen oder zurücksetzen
@@ -57,3 +58,9 @@ Oben kann zwischen `Jahr`, `Monat` und `Woche` umgeschaltet werden. In der Monat
 ## Einzelnen Termin einer Serie verschieben
 
 Den betreffenden Tag im Kalender öffnen, beim Serientermin `Ausnahme bearbeiten` wählen und den neuen Tag eintragen. Nur dieser eine Termin wird verschoben. Am ursprünglichen Tag bleibt ein Hinweis stehen, damit die Änderung nachvollziehbar ist. Die Ausnahme kann später zurückgesetzt werden.
+
+## Neue Eintragsarten
+
+- `Krank`: wird im Kalender angezeigt und nicht vom Urlaubskonto abgezogen.
+- `Samstagsarbeit`: wird im Kalender angezeigt und nicht vom Urlaubskonto abgezogen. An diesem Tag gilt der Nutzer in der Anzeige gemeinsamer freier Tage nicht als frei.
+- `Ausgleichsfrei`: wird nicht vom Urlaubskonto abgezogen und wie ein eigener freier Tag behandelt. Liegt dieser Tag in einem längeren Urlaubszeitraum, wird dafür kein zusätzlicher Urlaubstag gezählt.

@@ -1,4 +1,4 @@
-const CACHE_NAME = "urlaubskalender-v4-views-series-exceptions";
+const CACHE_NAME = "urlaubskalender-v5-entry-types";
 const APP_ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-180.png"];
 
 self.addEventListener("install", event => {

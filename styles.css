@@ -14,6 +14,12 @@
   --own-free-soft: #e3e7eb;
   --partner: #2f8b5b;
   --partner-soft: #d9f0e3;
+  --comp-time: #16858d;
+  --comp-time-soft: #d8eff1;
+  --sick: #a34b77;
+  --sick-soft: #f3dce8;
+  --saturday-work: #ad6420;
+  --saturday-work-soft: #f5e3d2;
   --both: #8264b1;
   --both-soft: #e8def5;
   --holiday: #b63f3f;
@@ -77,6 +83,9 @@ button { touch-action: manipulation; }
 .legend-dot.vacation { background: var(--vacation); }
 .legend-dot.own-free { background: var(--own-free); }
 .legend-dot.partner-free { background: var(--partner); }
+.legend-dot.comp-time { background: var(--comp-time); }
+.legend-dot.sick { background: var(--sick); }
+.legend-dot.saturday-work { background: var(--saturday-work); }
 .legend-dot.both-free { background: var(--both); }
 .legend-dot.holiday { background: var(--holiday); }
 
@@ -100,6 +109,9 @@ button { touch-action: manipulation; }
 .day-marker.vacation { background: var(--vacation); }
 .day-marker.own-free { background: var(--own-free); }
 .day-marker.partner-free { background: var(--partner); }
+.day-marker.comp-time { background: var(--comp-time); }
+.day-marker.sick { background: var(--sick); }
+.day-marker.saturday-work { background: var(--saturday-work); }
 .day-marker.other { background: var(--warning); }
 .day-cell.both-free { box-shadow: inset 0 -4px 0 var(--both); }
 .day-cell .half-badge { position: absolute; top: .18rem; right: .18rem; font-size: .55rem; color: var(--vacation); font-weight: 900; }
@@ -114,6 +126,9 @@ button { touch-action: manipulation; }
 .entry-swatch.vacation { background: var(--vacation); }
 .entry-swatch.own-free { background: var(--own-free); }
 .entry-swatch.partner-free { background: var(--partner); }
+.entry-swatch.comp-time { background: var(--comp-time); }
+.entry-swatch.sick { background: var(--sick); }
+.entry-swatch.saturday-work { background: var(--saturday-work); }
 .entry-main { min-width: 0; flex: 1; }
 .entry-title { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .entry-meta { margin-top: .15rem; color: var(--muted); font-size: .78rem; }
@@ -298,6 +313,9 @@ label { display: grid; gap: .35rem; color: var(--muted); font-size: .8rem; font-
 .calendar-event.vacation { background: var(--vacation-soft); color: #244d8d; }
 .calendar-event.own-free { background: var(--own-free-soft); color: #4e5964; }
 .calendar-event.partner-free { background: var(--partner-soft); color: #236a45; }
+.calendar-event.comp-time { background: var(--comp-time-soft); color: #126169; }
+.calendar-event.sick { background: var(--sick-soft); color: #7b3158; }
+.calendar-event.saturday-work { background: var(--saturday-work-soft); color: #7c4516; }
 .calendar-event.other { background: #f3e4ce; color: #805012; }
 .more-events,
 .no-events {

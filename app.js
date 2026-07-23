@@ -9,7 +9,15 @@
   const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
   const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const STATUS_NAMES = { planned: "geplant", requested: "beantragt", approved: "genehmigt", taken: "genommen" };
-  const TYPE_NAMES = { vacation: "Urlaub", "own-free": "Freier Tag", "partner-free": "Partnerin frei", other: "Sonstiges" };
+  const TYPE_NAMES = {
+    vacation: "Urlaub",
+    "own-free": "Freier Tag",
+    "partner-free": "Partnerin frei",
+    "comp-time": "Ausgleichsfrei",
+    sick: "Krank",
+    "saturday-work": "Samstagsarbeit",
+    other: "Sonstiges"
+  };
 
   let state = loadLocalState();
   let viewMode = ["year", "month", "week"].includes(localStorage.getItem(VIEW_MODE_KEY)) ? localStorage.getItem(VIEW_MODE_KEY) : "year";
@@ -699,9 +707,10 @@
           : `${series.title || displayTypeName(series.type)} verschoben auf ${formatSingleDate(override.date)}`
       })));
     const items = [...direct, ...recurring, ...exceptionNotices];
+    const hasSaturdayWork = items.some(i => i.type === "saturday-work");
     return {
       items,
-      ownFree: items.some(i => ["own-free", "vacation"].includes(i.type)) || isWeekendOrHoliday(key),
+      ownFree: !hasSaturdayWork && (items.some(i => ["own-free", "vacation", "comp-time"].includes(i.type)) || isWeekendOrHoliday(key)),
       partnerFree: items.some(i => i.type === "partner-free")
     };
   }
@@ -715,8 +724,8 @@
 
   function isOwnNonWorkingDay(key) {
     if (isWeekendOrHoliday(key)) return true;
-    if (state.entries.some(e => e.type === "own-free" && key >= e.start && key <= e.end)) return true;
-    if (state.series.some(s => s.type === "own-free" && seriesOccursOn(s, key))) return true;
+    if (state.entries.some(e => ["own-free", "comp-time"].includes(e.type) && key >= e.start && key <= e.end)) return true;
+    if (state.series.some(s => ["own-free", "comp-time"].includes(s.type) && seriesOccursOn(s, key))) return true;
     return false;
   }
 
