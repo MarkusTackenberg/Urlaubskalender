@@ -92,6 +92,8 @@
     refs.deleteEntryButton.addEventListener("click", deleteCurrentEntry);
 
     refs.seriesForm.addEventListener("submit", saveSeriesFromForm);
+    refs.seriesType.addEventListener("change", updateSeriesFormLabels);
+    refs.seriesWeekday.addEventListener("change", updateSeriesFormLabels);
     refs.deleteSeriesButton.addEventListener("click", deleteCurrentSeries);
     refs.settingsForm.addEventListener("submit", saveSettingsFromForm);
     refs.entryFilter.addEventListener("change", renderEntryList);
@@ -603,10 +605,28 @@
     refs.seriesInterval.value = String(item?.interval || 1);
     refs.seriesStart.value = item?.start || yearStart;
     refs.seriesEnd.value = item?.end || yearEnd;
-    refs.seriesTitle.value = item?.title || "Freier Montag";
+    refs.seriesTitle.value = item?.title || "";
     refs.deleteSeriesButton.classList.toggle("hidden", !item);
-    refs.seriesType.querySelector('option[value="partner-free"]').textContent = `${state.names.partner} frei`;
+    updateSeriesFormLabels();
+    if (!item && !refs.seriesTitle.value.trim()) refs.seriesTitle.value = suggestedSeriesTitle();
     refs.seriesDialog.showModal();
+  }
+
+  function updateSeriesFormLabels() {
+    refs.seriesType.querySelector('option[value="partner-free"]').textContent = `${state.names.partner} frei`;
+    if (!refs.seriesId.value && !refs.seriesTitle.value.trim()) {
+      refs.seriesTitle.value = suggestedSeriesTitle();
+    }
+  }
+
+  function suggestedSeriesTitle() {
+    const weekdayName = WEEKDAY_NAMES[Number(refs.seriesWeekday?.value || 1)];
+    const type = refs.seriesType?.value || "own-free";
+    if (type === "partner-free") return `${state.names.partner} frei`;
+    if (type === "comp-time") return `Ausgleichsfrei ${weekdayName}`;
+    if (type === "saturday-work") return `Samstagsarbeit ${weekdayName}`;
+    if (type === "other") return `Serientermin ${weekdayName}`;
+    return `Freier ${weekdayName}`;
   }
 
   function saveSeriesFromForm(event) {
