@@ -45,12 +45,12 @@ import {
   };
 
   const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyAcgQenpjhxviXtmVffaesgfp4j-scRDXk",
+    apiKey: "AIzaSyAcgQenpjhxviXtmVffaesqfp4j-scRDXk",
     authDomain: "urlaubskalender-markus.firebaseapp.com",
     projectId: "urlaubskalender-markus",
     storageBucket: "urlaubskalender-markus.firebasestorage.app",
     messagingSenderId: "963868265217",
-    appId: "1:963868265217:web:e1c97f66723f0f3725da900"
+    appId: "1:963868265217:web:e1c9766723f0f3725da900"
   };
 
   const firebaseApp = initializeApp(FIREBASE_CONFIG);

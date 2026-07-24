@@ -1,4 +1,4 @@
-const CACHE_NAME = "urlaubskalender-v7-firebase-sync";
+const CACHE_NAME = "urlaubskalender-v8-firebase-config-fix";
 const APP_ASSETS = [
   "./",
   "./index.html",
