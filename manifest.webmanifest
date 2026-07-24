@@ -1,7 +1,7 @@
 {
   "name": "Urlaubskalender",
   "short_name": "Urlaub",
-  "description": "Persönlicher Urlaubskalender mit lokaler Speicherung und Datensicherung",
+  "description": "Persönlicher Urlaubskalender mit automatischer Firebase-Synchronisierung",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -1,3 +1,28 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+import {
+  getAuth,
+  setPersistence,
+  browserLocalPersistence,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
+import {
+  initializeFirestore,
+  getFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  doc,
+  collection,
+  getDoc,
+  getDocs,
+  setDoc,
+  deleteDoc,
+  onSnapshot,
+  writeBatch,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
 (() => {
   "use strict";
 
@@ -19,12 +44,39 @@
     other: "Sonstiges"
   };
 
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyAcgQenpjhxviXtmVffaesgfp4j-scRDXk",
+    authDomain: "urlaubskalender-markus.firebaseapp.com",
+    projectId: "urlaubskalender-markus",
+    storageBucket: "urlaubskalender-markus.firebasestorage.app",
+    messagingSenderId: "963868265217",
+    appId: "1:963868265217:web:e1c97f66723f0f3725da900"
+  };
+
+  const firebaseApp = initializeApp(FIREBASE_CONFIG);
+  const auth = getAuth(firebaseApp);
+  let db;
+  try {
+    db = initializeFirestore(firebaseApp, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+    });
+  } catch (error) {
+    console.warn("Persistenter Firebase-Cache konnte nicht aktiviert werden", error);
+    db = getFirestore(firebaseApp);
+  }
+
   let state = loadLocalState();
   let viewMode = ["year", "month", "week"].includes(localStorage.getItem(VIEW_MODE_KEY)) ? localStorage.getItem(VIEW_MODE_KEY) : "year";
   let focusDate = validDateKey(localStorage.getItem(FOCUS_DATE_KEY)) ? localStorage.getItem(FOCUS_DATE_KEY) : dateKey(new Date());
   let activeYear = parseDate(focusDate).getFullYear();
   let selectedDay = focusDate;
   let toastTimer = null;
+  let currentUser = null;
+  let cloudReady = false;
+  let syncState = "signed-out";
+  let lastSyncAt = null;
+  let cloudUnsubscribers = [];
+  let applyingCloudData = false;
 
   const $ = (id) => document.getElementById(id);
   const refs = {};
@@ -37,11 +89,14 @@
     ensureYearSettings(activeYear);
     renderAll();
     registerServiceWorker();
+    initFirebaseAuth();
+    window.addEventListener("online", () => updateConnectionStatus());
+    window.addEventListener("offline", () => updateConnectionStatus());
   }
 
   function cacheRefs() {
     [
-      "toast", "backupButton", "backupBarButton", "loadButton", "backupHeadline", "backupDetails", "menuButton",
+      "toast", "accountButton", "accountBarButton", "accountMenuButton", "backupBarButton", "loadButton", "backupHeadline", "backupDetails", "menuButton",
       "prevYear", "nextYear", "yearButton", "todayButton", "addEntryButton", "addSeriesButton",
       "summaryCards", "calendar", "entryFilter", "entryList", "commonFreeList", "sideMenu", "backupStatus", "settingsButton",
       "seriesListButton", "exportButton", "importInput", "backupHelpButton", "printButton",
@@ -52,7 +107,8 @@
       "seriesListDialog", "seriesList", "newSeriesFromList", "backupHelpDialog", "legendOwn", "legendPartner",
       "dayDialog", "dayDialogTitle", "dayItemList", "addEntryForDayButton",
       "occurrenceDialog", "occurrenceForm", "occurrenceDialogTitle", "occurrenceSeriesId", "occurrenceOriginalDate",
-      "occurrenceInfo", "occurrenceNewDate", "cancelOccurrenceButton", "resetOccurrenceButton"
+      "occurrenceInfo", "occurrenceNewDate", "cancelOccurrenceButton", "resetOccurrenceButton",
+      "loginDialog", "loginForm", "loginEmail", "loginPassword", "loginError", "loginSubmitButton"
     ].forEach(id => refs[id] = $(id));
   }
 
@@ -78,13 +134,16 @@
     refs.settingsButton.addEventListener("click", () => { closeMenu(); openSettings(); });
     refs.seriesListButton.addEventListener("click", () => { closeMenu(); renderSeriesList(); refs.seriesListDialog.showModal(); });
     refs.newSeriesFromList.addEventListener("click", () => { refs.seriesListDialog.close(); openSeriesDialog(); });
-    refs.backupButton.addEventListener("click", exportBackup);
+    refs.accountButton.addEventListener("click", handleAccountAction);
+    refs.accountBarButton.addEventListener("click", handleAccountAction);
+    refs.accountMenuButton.addEventListener("click", () => { closeMenu(); handleAccountAction(); });
     refs.backupBarButton.addEventListener("click", exportBackup);
     refs.exportButton.addEventListener("click", () => { closeMenu(); exportBackup(); });
     refs.loadButton.addEventListener("click", () => refs.importInput.click());
     refs.importInput.addEventListener("change", importBackup);
     refs.backupHelpButton.addEventListener("click", () => { closeMenu(); refs.backupHelpDialog.showModal(); });
     refs.printButton.addEventListener("click", () => { closeMenu(); window.print(); });
+    refs.loginForm.addEventListener("submit", loginFromForm);
 
     refs.entryForm.addEventListener("submit", saveEntryFromForm);
     refs.entryType.addEventListener("change", updateEntryFormVisibility);
@@ -484,6 +543,7 @@
     }
     setSeriesOverride(series, { originalDate, date: newDate, cancelled: false, updatedAt: new Date().toISOString() });
     saveLocal(true);
+    void cloudUpsertSeries(series);
     refs.occurrenceDialog.close();
     focusDate = newDate;
     activeYear = parseDate(newDate).getFullYear();
@@ -499,6 +559,7 @@
     if (!series || !confirm("Soll nur dieser einzelne Serientermin entfallen?")) return;
     setSeriesOverride(series, { originalDate, date: originalDate, cancelled: true, updatedAt: new Date().toISOString() });
     saveLocal(true);
+    void cloudUpsertSeries(series);
     refs.occurrenceDialog.close();
     renderAll();
     showToast("Der einzelne Serientermin wurde ausgenommen.");
@@ -511,6 +572,7 @@
     series.overrides = (series.overrides || []).filter(item => item.originalDate !== originalDate);
     series.updatedAt = new Date().toISOString();
     saveLocal(true);
+    void cloudUpsertSeries(series);
     refs.occurrenceDialog.close();
     renderAll();
     showToast("Die Ausnahme wurde zurückgesetzt.");
@@ -579,6 +641,7 @@
     };
     if (existing) Object.assign(existing, entry); else state.entries.push(entry);
     saveLocal(true);
+    void cloudUpsertEntry(entry);
     refs.entryDialog.close();
     renderAll();
     showToast("Eintrag gespeichert.");
@@ -589,6 +652,7 @@
     if (!id || !confirm("Diesen Eintrag wirklich löschen?")) return;
     state.entries = state.entries.filter(e => e.id !== id);
     saveLocal(true);
+    void cloudDeleteEntry(id);
     refs.entryDialog.close();
     renderAll();
     showToast("Eintrag gelöscht.");
@@ -649,6 +713,7 @@
     };
     if (existing) Object.assign(existing, item); else state.series.push(item);
     saveLocal(true);
+    void cloudUpsertSeries(item);
     refs.seriesDialog.close();
     renderAll();
     showToast("Serientermin gespeichert.");
@@ -659,6 +724,7 @@
     if (!id || !confirm("Diesen Serientermin wirklich löschen?")) return;
     state.series = state.series.filter(s => s.id !== id);
     saveLocal(true);
+    void cloudDeleteSeries(id);
     refs.seriesDialog.close();
     renderAll();
     showToast("Serientermin gelöscht.");
@@ -690,6 +756,7 @@
       holidaysEnabled: refs.holidaysEnabled.checked
     };
     saveLocal(true);
+    void cloudSaveSettings();
     refs.settingsDialog.close();
     renderAll();
     showToast("Einstellungen gespeichert.");
@@ -972,11 +1039,479 @@
       markCurrentStateSafe();
       renderAll();
       closeMenu();
-      showToast("Sicherung wurde eingelesen.");
+      if (currentUser && cloudReady) {
+        const user = currentUser;
+        stopCloudSync(false);
+        await replaceCloudWithLocal(user);
+        await startCloudSync(user);
+        showToast("Sicherung wurde eingelesen und mit Firebase abgeglichen.");
+      } else {
+        showToast("Sicherung wurde eingelesen.");
+      }
     } catch (error) {
       console.error(error);
       showToast("Die Sicherungsdatei ist ungültig.", "error");
     }
+  }
+
+  async function initFirebaseAuth() {
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+    } catch (error) {
+      console.warn("Die dauerhafte Anmeldung konnte nicht vorbereitet werden", error);
+    }
+
+    onAuthStateChanged(auth, user => {
+      void handleAuthStateChanged(user);
+    });
+  }
+
+  async function handleAuthStateChanged(user) {
+    currentUser = user || null;
+    if (!currentUser) {
+      stopCloudSync();
+      syncState = "signed-out";
+      updateBackupUi();
+      return;
+    }
+
+    localStorage.setItem("urlaubskalender-login-email", currentUser.email || "");
+    syncState = "connecting";
+    updateBackupUi();
+    await startCloudSync(currentUser);
+  }
+
+  function handleAccountAction() {
+    if (currentUser) {
+      const email = currentUser.email || "diesem Konto";
+      if (!confirm(`Möchtest du dich wirklich von ${email} abmelden? Die lokalen Daten bleiben auf diesem Gerät erhalten.`)) return;
+      void signOut(auth).catch(error => {
+        console.error(error);
+        showToast("Die Abmeldung ist fehlgeschlagen.", "error");
+      });
+      return;
+    }
+
+    refs.loginError.classList.add("hidden");
+    refs.loginError.textContent = "";
+    refs.loginEmail.value = localStorage.getItem("urlaubskalender-login-email") || "";
+    refs.loginPassword.value = "";
+    refs.loginDialog.showModal();
+    setTimeout(() => (refs.loginEmail.value ? refs.loginPassword : refs.loginEmail).focus(), 50);
+  }
+
+  async function loginFromForm(event) {
+    event.preventDefault();
+    const email = refs.loginEmail.value.trim();
+    const password = refs.loginPassword.value;
+    refs.loginSubmitButton.disabled = true;
+    refs.loginSubmitButton.textContent = "Anmeldung läuft …";
+    refs.loginError.classList.add("hidden");
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      refs.loginPassword.value = "";
+      refs.loginDialog.close();
+      showToast("Anmeldung erfolgreich. Der Kalender wird jetzt abgeglichen.");
+    } catch (error) {
+      console.error(error);
+      refs.loginError.textContent = firebaseAuthErrorText(error?.code);
+      refs.loginError.classList.remove("hidden");
+    } finally {
+      refs.loginSubmitButton.disabled = false;
+      refs.loginSubmitButton.textContent = "Anmelden";
+    }
+  }
+
+  function firebaseAuthErrorText(code) {
+    const messages = {
+      "auth/invalid-credential": "E-Mail-Adresse oder Passwort stimmen nicht.",
+      "auth/invalid-email": "Die E-Mail-Adresse ist nicht gültig.",
+      "auth/user-disabled": "Dieser Benutzer wurde in Firebase deaktiviert.",
+      "auth/too-many-requests": "Zu viele Anmeldeversuche. Bitte einige Minuten warten.",
+      "auth/network-request-failed": "Firebase ist gerade nicht erreichbar. Bitte die Internetverbindung prüfen."
+    };
+    return messages[code] || "Die Anmeldung ist fehlgeschlagen. Bitte E-Mail-Adresse und Passwort prüfen.";
+  }
+
+  function settingsDocument(user = currentUser) {
+    return doc(db, "users", user.uid, "settings", "main");
+  }
+
+  function entriesCollection(user = currentUser) {
+    return collection(db, "users", user.uid, "entries");
+  }
+
+  function seriesCollection(user = currentUser) {
+    return collection(db, "users", user.uid, "series");
+  }
+
+  async function startCloudSync(user) {
+    stopCloudSync(false);
+    cloudReady = false;
+    syncState = navigator.onLine ? "connecting" : "offline";
+    updateBackupUi();
+
+    try {
+      const [settingsSnapshot, entriesSnapshot, seriesSnapshot] = await Promise.all([
+        getDoc(settingsDocument(user)),
+        getDocs(entriesCollection(user)),
+        getDocs(seriesCollection(user))
+      ]);
+
+      const cloudHasData = settingsSnapshot.exists() || !entriesSnapshot.empty || !seriesSnapshot.empty;
+      if (!navigator.onLine && !cloudHasData) {
+        syncState = "offline";
+        updateBackupUi();
+        return;
+      }
+      if (!cloudHasData) {
+        if (hasMeaningfulLocalData()) {
+          const proceed = confirm(
+            `In Firebase sind noch keine Kalenderdaten gespeichert. Soll der aktuelle Stand dieses Geräts jetzt hochgeladen werden?\n\n` +
+            `${state.entries.length} Einträge und ${state.series.length} Serientermine werden übernommen.`
+          );
+          if (!proceed) {
+            await signOut(auth);
+            return;
+          }
+        }
+        await replaceCloudWithLocal(user);
+      } else {
+        applyInitialCloudData(settingsSnapshot, entriesSnapshot, seriesSnapshot);
+      }
+
+      cloudReady = true;
+      attachCloudListeners(user);
+      lastSyncAt = new Date();
+      markCurrentStateSafe();
+      syncState = navigator.onLine ? "synced" : "offline";
+      updateBackupUi();
+    } catch (error) {
+      console.error("Firebase-Start fehlgeschlagen", error);
+      cloudReady = false;
+      syncState = navigator.onLine ? "error" : "offline";
+      updateBackupUi();
+      showToast("Die Firebase-Synchronisierung konnte nicht gestartet werden.", "error");
+    }
+  }
+
+  function stopCloudSync(clearUserState = true) {
+    cloudUnsubscribers.forEach(unsubscribe => {
+      try { unsubscribe(); } catch (error) { console.warn(error); }
+    });
+    cloudUnsubscribers = [];
+    cloudReady = false;
+    if (clearUserState) lastSyncAt = null;
+  }
+
+  function hasMeaningfulLocalData() {
+    return state.entries.length > 0 || state.series.length > 0 || Number(state.revision) > 0;
+  }
+
+  function applyInitialCloudData(settingsSnapshot, entriesSnapshot, seriesSnapshot) {
+    applyingCloudData = true;
+    try {
+      if (settingsSnapshot.exists()) applyCloudSettings(settingsSnapshot.data());
+      state.entries = entriesSnapshot.docs.map(snapshot => normalizeCloudEntry(snapshot.id, snapshot.data()));
+      state.series = seriesSnapshot.docs.map(snapshot => normalizeCloudSeries(snapshot.id, snapshot.data()));
+      finishCloudStateUpdate();
+    } finally {
+      applyingCloudData = false;
+    }
+  }
+
+  function attachCloudListeners(user) {
+    const metadata = {
+      settings: { pending: false, fromCache: true },
+      entries: { pending: false, fromCache: true },
+      series: { pending: false, fromCache: true }
+    };
+
+    cloudUnsubscribers.push(onSnapshot(settingsDocument(user), { includeMetadataChanges: true }, snapshot => {
+      if (snapshot.exists()) {
+        applyingCloudData = true;
+        try {
+          applyCloudSettings(snapshot.data());
+          finishCloudStateUpdate();
+        } finally {
+          applyingCloudData = false;
+        }
+      }
+      updateCloudMetadata("settings", snapshot.metadata, metadata);
+    }, cloudListenerError));
+
+    cloudUnsubscribers.push(onSnapshot(entriesCollection(user), { includeMetadataChanges: true }, snapshot => {
+      applyingCloudData = true;
+      try {
+        state.entries = snapshot.docs.map(item => normalizeCloudEntry(item.id, item.data()));
+        finishCloudStateUpdate();
+      } finally {
+        applyingCloudData = false;
+      }
+      updateCloudMetadata("entries", snapshot.metadata, metadata);
+    }, cloudListenerError));
+
+    cloudUnsubscribers.push(onSnapshot(seriesCollection(user), { includeMetadataChanges: true }, snapshot => {
+      applyingCloudData = true;
+      try {
+        state.series = snapshot.docs.map(item => normalizeCloudSeries(item.id, item.data()));
+        finishCloudStateUpdate();
+      } finally {
+        applyingCloudData = false;
+      }
+      updateCloudMetadata("series", snapshot.metadata, metadata);
+    }, cloudListenerError));
+  }
+
+  function cloudListenerError(error) {
+    console.error("Firebase-Echtzeitabgleich fehlgeschlagen", error);
+    syncState = navigator.onLine ? "error" : "offline";
+    updateBackupUi();
+  }
+
+  function updateCloudMetadata(kind, snapshotMetadata, allMetadata) {
+    allMetadata[kind] = {
+      pending: snapshotMetadata.hasPendingWrites,
+      fromCache: snapshotMetadata.fromCache
+    };
+
+    const values = Object.values(allMetadata);
+    const hasPendingWrites = values.some(value => value.pending);
+    if (!navigator.onLine) {
+      syncState = "offline";
+    } else if (hasPendingWrites) {
+      syncState = "saving";
+    } else {
+      syncState = "synced";
+      lastSyncAt = new Date();
+      markCurrentStateSafe();
+    }
+    updateBackupUi();
+  }
+
+  function applyCloudSettings(data) {
+    if (data?.names && typeof data.names === "object") {
+      state.names = { ...state.names, ...data.names };
+    }
+    if (data?.yearSettings && typeof data.yearSettings === "object") {
+      state.yearSettings = data.yearSettings;
+    }
+  }
+
+  function finishCloudStateUpdate() {
+    state.schemaVersion = 2;
+    state.revision = (Number(state.revision) || 0) + 1;
+    state.updatedAt = new Date().toISOString();
+    ensureYearSettings(activeYear);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    renderAll();
+  }
+
+  function normalizeCloudEntry(id, data) {
+    return {
+      id,
+      type: data.type || "other",
+      status: data.status || "",
+      start: data.start,
+      end: data.end,
+      dayPart: data.dayPart || "full",
+      note: data.note || "",
+      createdAt: data.createdAt || new Date().toISOString(),
+      updatedAt: data.updatedAt || new Date().toISOString()
+    };
+  }
+
+  function normalizeCloudSeries(id, data) {
+    return {
+      id,
+      type: data.type || "other",
+      weekday: Number(data.weekday),
+      interval: Number(data.interval || 1),
+      start: data.start,
+      end: data.end,
+      title: data.title || displayTypeName(data.type),
+      overrides: Array.isArray(data.overrides) ? data.overrides.map(item => ({
+        originalDate: item.originalDate,
+        date: item.date || item.originalDate,
+        cancelled: Boolean(item.cancelled),
+        updatedAt: item.updatedAt || new Date().toISOString()
+      })) : [],
+      createdAt: data.createdAt || new Date().toISOString(),
+      updatedAt: data.updatedAt || new Date().toISOString()
+    };
+  }
+
+  function cleanEntryForCloud(entry) {
+    return {
+      type: entry.type,
+      status: entry.status || "",
+      start: entry.start,
+      end: entry.end,
+      dayPart: entry.dayPart || "full",
+      note: entry.note || "",
+      createdAt: entry.createdAt || new Date().toISOString(),
+      updatedAt: entry.updatedAt || new Date().toISOString(),
+      cloudUpdatedAt: serverTimestamp()
+    };
+  }
+
+  function cleanSeriesForCloud(series) {
+    return {
+      type: series.type,
+      weekday: Number(series.weekday),
+      interval: Number(series.interval || 1),
+      start: series.start,
+      end: series.end,
+      title: series.title || displayTypeName(series.type),
+      overrides: Array.isArray(series.overrides) ? series.overrides.map(item => ({
+        originalDate: item.originalDate,
+        date: item.date || item.originalDate,
+        cancelled: Boolean(item.cancelled),
+        updatedAt: item.updatedAt || new Date().toISOString()
+      })) : [],
+      createdAt: series.createdAt || new Date().toISOString(),
+      updatedAt: series.updatedAt || new Date().toISOString(),
+      cloudUpdatedAt: serverTimestamp()
+    };
+  }
+
+  function settingsForCloud(sourceState = state) {
+    return {
+      schemaVersion: 2,
+      names: sourceState.names,
+      yearSettings: sourceState.yearSettings,
+      clientUpdatedAt: sourceState.updatedAt,
+      cloudUpdatedAt: serverTimestamp()
+    };
+  }
+
+  async function cloudUpsertEntry(entry) {
+    if (!currentUser || !cloudReady || applyingCloudData) return;
+    setCloudSavingState();
+    try {
+      await setDoc(doc(entriesCollection(), entry.id), cleanEntryForCloud(entry));
+    } catch (error) {
+      cloudWriteError(error);
+    }
+  }
+
+  async function cloudDeleteEntry(id) {
+    if (!currentUser || !cloudReady || applyingCloudData) return;
+    setCloudSavingState();
+    try {
+      await deleteDoc(doc(entriesCollection(), id));
+    } catch (error) {
+      cloudWriteError(error);
+    }
+  }
+
+  async function cloudUpsertSeries(series) {
+    if (!currentUser || !cloudReady || applyingCloudData) return;
+    setCloudSavingState();
+    try {
+      await setDoc(doc(seriesCollection(), series.id), cleanSeriesForCloud(series));
+    } catch (error) {
+      cloudWriteError(error);
+    }
+  }
+
+  async function cloudDeleteSeries(id) {
+    if (!currentUser || !cloudReady || applyingCloudData) return;
+    setCloudSavingState();
+    try {
+      await deleteDoc(doc(seriesCollection(), id));
+    } catch (error) {
+      cloudWriteError(error);
+    }
+  }
+
+  async function cloudSaveSettings() {
+    if (!currentUser || !cloudReady || applyingCloudData) return;
+    setCloudSavingState();
+    try {
+      await setDoc(settingsDocument(), settingsForCloud());
+    } catch (error) {
+      cloudWriteError(error);
+    }
+  }
+
+  function setCloudSavingState() {
+    syncState = navigator.onLine ? "saving" : "offline";
+    updateBackupUi();
+  }
+
+  function cloudWriteError(error) {
+    console.error("Firebase-Schreibfehler", error);
+    syncState = navigator.onLine ? "error" : "offline";
+    updateBackupUi();
+    showToast("Eine Änderung konnte noch nicht mit Firebase abgeglichen werden.", "error");
+  }
+
+  async function replaceCloudWithLocal(user = currentUser) {
+    if (!user) return;
+    const localSnapshot = normalizeState(JSON.parse(JSON.stringify(state)));
+    syncState = navigator.onLine ? "saving" : "offline";
+    updateBackupUi();
+
+    const [existingEntries, existingSeries] = await Promise.all([
+      getDocs(entriesCollection(user)),
+      getDocs(seriesCollection(user))
+    ]);
+
+    const localEntryIds = new Set(localSnapshot.entries.map(item => item.id));
+    const localSeriesIds = new Set(localSnapshot.series.map(item => item.id));
+    const operations = [];
+
+    existingEntries.docs.forEach(item => {
+      if (!localEntryIds.has(item.id)) operations.push({ action: "delete", ref: item.ref });
+    });
+    existingSeries.docs.forEach(item => {
+      if (!localSeriesIds.has(item.id)) operations.push({ action: "delete", ref: item.ref });
+    });
+
+    operations.push({ action: "set", ref: settingsDocument(user), data: settingsForCloud(localSnapshot) });
+    localSnapshot.entries.forEach(entry => operations.push({
+      action: "set",
+      ref: doc(entriesCollection(user), entry.id),
+      data: cleanEntryForCloud(entry)
+    }));
+    localSnapshot.series.forEach(series => operations.push({
+      action: "set",
+      ref: doc(seriesCollection(user), series.id),
+      data: cleanSeriesForCloud(series)
+    }));
+
+    for (let index = 0; index < operations.length; index += 400) {
+      const batch = writeBatch(db);
+      operations.slice(index, index + 400).forEach(operation => {
+        if (operation.action === "delete") batch.delete(operation.ref);
+        else batch.set(operation.ref, operation.data);
+      });
+      await batch.commit();
+    }
+
+    lastSyncAt = new Date();
+    markCurrentStateSafe();
+    syncState = navigator.onLine ? "synced" : "offline";
+    updateBackupUi();
+  }
+
+  function updateConnectionStatus() {
+    if (!currentUser) return;
+    if (!navigator.onLine) {
+      syncState = "offline";
+      updateBackupUi();
+      return;
+    }
+    if (!cloudReady) {
+      syncState = "connecting";
+      updateBackupUi();
+      void startCloudSync(currentUser);
+      return;
+    }
+    if (syncState === "offline") syncState = "connecting";
+    updateBackupUi();
   }
 
   function markCurrentStateSafe() {
@@ -987,25 +1522,60 @@
 
   function updateBackupUi() {
     if (!refs.backupHeadline) return;
-    const safeRevision = Number(localStorage.getItem(SAFE_REVISION_KEY));
-    const hasSafeRevision = localStorage.getItem(SAFE_REVISION_KEY) !== null;
-    const isDirty = !hasSafeRevision || safeRevision !== Number(state.revision || 0);
-    const safeAt = localStorage.getItem(SAFE_AT_KEY);
 
-    if (isDirty) {
-      refs.backupHeadline.textContent = "Neue Änderungen noch nicht für andere Geräte gesichert";
-      refs.backupDetails.textContent = "Auf diesem Gerät sind sie gespeichert. Jetzt eine Sicherung in OneDrive ablegen.";
-      refs.backupStatus.textContent = "Neue Änderungen vorhanden. Vor dem Gerätewechsel bitte sichern.";
-      refs.backupButton.classList.add("attention");
-      refs.backupBarButton.classList.add("attention");
-    } else {
-      const when = safeAt ? formatDateTime(safeAt) : "gerade eben";
-      refs.backupHeadline.textContent = "Aktueller Stand wurde gesichert oder geladen";
-      refs.backupDetails.textContent = `Letzter gesicherter Stand: ${when}`;
-      refs.backupStatus.textContent = `Letzter gesicherter oder geladener Stand: ${when}`;
-      refs.backupButton.classList.remove("attention");
-      refs.backupBarButton.classList.remove("attention");
+    const email = currentUser?.email || "";
+    const lastSyncText = lastSyncAt ? formatDateTime(lastSyncAt.toISOString()) : "noch nicht abgeschlossen";
+    let headline = "Nur auf diesem Gerät gespeichert";
+    let details = "Melde dich an, damit PC, iPhone und iPad automatisch denselben Stand erhalten.";
+    let menuText = "Noch nicht angemeldet. Die Daten bleiben vorerst nur auf diesem Gerät.";
+    let cssClass = "offline";
+
+    if (currentUser) {
+      if (syncState === "connecting") {
+        headline = "Firebase wird verbunden";
+        details = `${email} · der gemeinsame Kalenderstand wird geladen.`;
+        menuText = `Angemeldet als ${email}. Verbindung wird hergestellt.`;
+        cssClass = "saving";
+      } else if (syncState === "saving") {
+        headline = "Änderungen werden synchronisiert";
+        details = `${email} · bitte das Gerät kurz online lassen.`;
+        menuText = `Angemeldet als ${email}. Änderungen werden übertragen.`;
+        cssClass = "saving";
+      } else if (syncState === "synced") {
+        headline = "Automatisch synchronisiert";
+        details = `${email} · letzter Abgleich: ${lastSyncText}`;
+        menuText = `Angemeldet als ${email}. Letzter Abgleich: ${lastSyncText}.`;
+        cssClass = "online";
+      } else if (syncState === "offline") {
+        headline = "Offline – Änderungen bleiben gespeichert";
+        details = `${email} · die Übertragung erfolgt automatisch, sobald wieder Internet verfügbar ist.`;
+        menuText = `Angemeldet als ${email}. Der Kalender arbeitet gerade offline.`;
+        cssClass = "offline";
+      } else if (syncState === "error") {
+        headline = "Synchronisierung fehlgeschlagen";
+        details = `${email} · bitte Internetverbindung prüfen und die Seite neu laden.`;
+        menuText = `Angemeldet als ${email}. Beim Abgleich ist ein Fehler aufgetreten.`;
+        cssClass = "error";
+      }
     }
+
+    refs.backupHeadline.textContent = headline;
+    refs.backupDetails.textContent = details;
+    refs.backupStatus.textContent = menuText;
+    refs.backupStatus.className = `sync-status ${cssClass}`;
+
+    refs.accountButton.textContent = currentUser ? "Konto" : "Anmelden";
+    refs.accountBarButton.textContent = currentUser ? "Abmelden" : "Anmelden";
+    refs.accountMenuButton.textContent = currentUser ? `Abmelden (${email})` : "Bei Firebase anmelden";
+
+    [refs.accountButton, refs.accountBarButton].forEach(button => {
+      button.classList.remove("sync-online", "sync-saving", "sync-offline");
+      if (currentUser && syncState === "synced") button.classList.add("sync-online");
+      else if (currentUser && ["saving", "connecting"].includes(syncState)) button.classList.add("sync-saving");
+      else if (currentUser) button.classList.add("sync-offline");
+    });
+
+    refs.backupBarButton.classList.remove("attention");
   }
 
   function formatDateTime(value) {

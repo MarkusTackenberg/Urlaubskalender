@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Urlaubskalender">
-  <meta name="description" content="Persönlicher Urlaubskalender mit lokaler Speicherung und Datensicherung">
+  <meta name="description" content="Persönlicher Urlaubskalender mit automatischer Firebase-Synchronisierung">
   <title>Urlaubskalender</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
@@ -23,7 +23,7 @@
       <h1>Urlaubskalender</h1>
     </div>
     <div class="header-actions">
-      <button id="backupButton" class="button secondary" type="button">Sicherung speichern</button>
+      <button id="accountButton" class="button secondary" type="button">Anmelden</button>
       <button id="menuButton" class="button icon-button" type="button" aria-label="Menü öffnen">☰</button>
     </div>
   </header>
@@ -47,14 +47,15 @@
       </div>
     </section>
 
-    <section class="backup-bar card" aria-label="Datensicherung">
+    <section class="backup-bar card" aria-label="Synchronisierung">
       <div>
-        <strong id="backupHeadline">Daten werden auf diesem Gerät gespeichert</strong>
-        <span id="backupDetails">Für die Nutzung auf einem anderen Gerät eine Sicherung in OneDrive speichern.</span>
+        <strong id="backupHeadline">Noch nicht mit Firebase verbunden</strong>
+        <span id="backupDetails">Nach der Anmeldung werden PC, iPhone und iPad automatisch synchronisiert.</span>
       </div>
-      <div class="backup-actions">
-        <button id="loadButton" class="button secondary" type="button">Daten laden</button>
-        <button id="backupBarButton" class="button primary" type="button">Sicherung speichern</button>
+      <div class="backup-actions sync-actions">
+        <button id="accountBarButton" class="button primary" type="button">Anmelden</button>
+        <button id="loadButton" class="button secondary" type="button">Sicherung laden</button>
+        <button id="backupBarButton" class="button secondary" type="button">Sicherung speichern</button>
       </div>
     </section>
 
@@ -113,12 +114,13 @@
         <h2>Menü</h2>
         <button class="button icon-button" type="button" data-close-menu aria-label="Menü schließen">×</button>
       </div>
-      <div id="backupStatus" class="sync-status">Daten werden nur auf diesem Gerät gespeichert.</div>
+      <div id="backupStatus" class="sync-status">Noch nicht angemeldet.</div>
+      <button id="accountMenuButton" class="menu-item" type="button">Bei Firebase anmelden</button>
       <button id="settingsButton" class="menu-item" type="button">Einstellungen</button>
       <button id="seriesListButton" class="menu-item" type="button">Serientermine verwalten</button>
-      <button id="exportButton" class="menu-item" type="button">Sicherung in OneDrive speichern</button>
-      <label class="menu-item file-label">Sicherung aus OneDrive laden<input id="importInput" type="file" accept="application/json,.json"></label>
-      <button id="backupHelpButton" class="menu-item" type="button">Gerätewechsel erklären</button>
+      <button id="exportButton" class="menu-item" type="button">Zusätzliche Sicherung speichern</button>
+      <label class="menu-item file-label">Sicherung einlesen<input id="importInput" type="file" accept="application/json,.json"></label>
+      <button id="backupHelpButton" class="menu-item" type="button">Synchronisierung erklären</button>
       <button id="printButton" class="menu-item" type="button">Jahresübersicht drucken</button>
     </div>
   </aside>
@@ -342,20 +344,19 @@
     <div class="modal-header">
       <div>
         <p class="eyebrow">PC, iPhone und iPad</p>
-        <h2>Daten zwischen Geräten übertragen</h2>
+        <h2>Automatische Synchronisierung</h2>
       </div>
       <button class="button icon-button" type="button" data-close-dialog="backupHelpDialog" aria-label="Schließen">×</button>
     </div>
     <div class="setup-copy">
-      <p>Der Kalender speichert Änderungen sofort auf dem gerade verwendeten Gerät. Damit ein anderes Gerät denselben Stand erhält, verwendest du eine Sicherungsdatei in OneDrive.</p>
+      <p>Nach der Anmeldung speichert der Kalender Änderungen automatisch in deiner geschützten Firebase-Datenbank. Öffnest du den Kalender auf einem anderen Gerät mit demselben Konto, erscheint dort derselbe Stand.</p>
       <ol>
-        <li>Nach Änderungen auf <strong>„Sicherung speichern“</strong> tippen.</li>
-        <li>Die Datei <code>Urlaubskalender-Daten.json</code> in deinem OneDrive-Ordner ablegen beziehungsweise die vorhandene Datei ersetzen.</li>
-        <li>Auf dem anderen Gerät zuerst <strong>„Daten laden“</strong> wählen und diese Datei aus OneDrive öffnen.</li>
-        <li>Erst danach auf dem anderen Gerät neue Änderungen eintragen.</li>
+        <li>Auf jedem Gerät einmal mit derselben E-Mail-Adresse und demselben Passwort anmelden.</li>
+        <li>Einträge normal bearbeiten. Die Übertragung erfolgt automatisch.</li>
+        <li>Ohne Internet kannst du weiterarbeiten. Sobald die Verbindung wieder da ist, werden die Änderungen nachgeholt.</li>
       </ol>
-      <p class="form-hint"><strong>Wichtig:</strong> Nicht gleichzeitig auf zwei Geräten Änderungen machen, ohne vorher den jeweils neuesten Stand zu laden. Sonst können Einträge überschrieben werden.</p>
-      <p class="form-hint">Auf iPhone und iPad öffnet sich beim Sichern das Teilen-Menü. Dort „In Dateien sichern“ wählen und anschließend OneDrive als Speicherort nehmen.</p>
+      <p class="form-hint"><strong>Hinweis:</strong> Wird exakt derselbe Eintrag gleichzeitig auf zwei Geräten verändert, gilt die zuletzt gespeicherte Fassung.</p>
+      <p>Die Schaltflächen <strong>„Sicherung speichern“</strong> und <strong>„Sicherung laden“</strong> bleiben als zusätzliche Notfallkopie erhalten.</p>
     </div>
     <div class="modal-actions">
       <span class="spacer"></span>
@@ -363,6 +364,33 @@
     </div>
   </dialog>
 
-  <script src="app.js"></script>
+  <dialog id="loginDialog" class="modal login-modal">
+    <form id="loginForm">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Firebase</p>
+          <h2>Kalender anmelden</h2>
+        </div>
+        <button class="button icon-button" type="button" data-close-dialog="loginDialog" aria-label="Schließen">×</button>
+      </div>
+      <div class="form-grid single-column">
+        <label>E-Mail-Adresse
+          <input id="loginEmail" class="input" type="email" autocomplete="username" required>
+        </label>
+        <label>Passwort
+          <input id="loginPassword" class="input" type="password" autocomplete="current-password" required>
+        </label>
+      </div>
+      <div id="loginError" class="form-hint login-error hidden" role="alert"></div>
+      <p class="login-note">Verwende den Benutzer, den du gerade in Firebase Authentication angelegt hast.</p>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button class="button secondary" type="button" data-close-dialog="loginDialog">Abbrechen</button>
+        <button id="loginSubmitButton" class="button primary" type="submit">Anmelden</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
 </body>
 </html>

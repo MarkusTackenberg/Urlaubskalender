@@ -1,66 +1,48 @@
 # Urlaubskalender
 
-Persönlicher Urlaubskalender für Windows, iPhone und iPad. Die Web-App läuft kostenlos auf GitHub Pages. Die Daten werden auf jedem Gerät lokal gespeichert und können über eine JSON-Sicherungsdatei in OneDrive zwischen den Geräten übertragen werden. Eine Microsoft-App-Registrierung, Entra, Supabase oder Cloudflare ist nicht nötig.
+Persönlicher Urlaubskalender für Windows, iPhone und iPad. Die Programmdateien laufen über GitHub Pages. Kalenderdaten werden nach der Anmeldung automatisch über Firebase Authentication und Cloud Firestore synchronisiert.
 
 ## Enthaltene Funktionen
 
 - Jahresurlaub und Resturlaub
 - automatische Berechnung der verbrauchten und verbleibenden Urlaubstage
 - ganze und halbe Urlaubstage
-- geplant, beantragt, genehmigt und genommen
+- Status geplant, beantragt, genehmigt und genommen
 - Feiertage in Niedersachsen
 - individuelle Arbeitstage
 - wiederkehrende freie Tage und Serientermine
 - freie Tage der Partnerin
-- zusätzliche Eintragsarten: Krank, Samstagsarbeit und Ausgleichsfrei
-- Anzeige gemeinsamer freier Zeiträume
-- umschaltbare Jahres-, Monats- und Wochenansicht
+- Krank, Samstagsarbeit und Ausgleichsfrei
+- Jahres-, Monats- und Wochenansicht
 - einzelne Termine einer Serie verschieben, ausnehmen oder zurücksetzen
-- Jahresübersicht und Druckansicht
-- lokale Speicherung im Browser
-- Sicherung und Wiederherstellung über eine JSON-Datei
-- als Web-App auf iPhone und iPad installierbar
+- automatische Synchronisierung zwischen PC, iPhone und iPad
+- Offline-Zwischenspeicherung im Browser
+- zusätzliche Sicherung und Wiederherstellung als JSON-Datei
+- Installation als Web-App auf iPhone und iPad
 
-## Daten auf mehreren Geräten verwenden
+## Erste Anmeldung und Datenübernahme
 
-Der Kalender synchronisiert nicht automatisch. Dadurch entstehen keine Kosten und es ist keine Microsoft-App-Registrierung nötig.
+1. Die aktualisierten Dateien in das bestehende GitHub-Repository hochladen.
+2. Den Kalender zuerst auf dem Windows-PC öffnen, auf dem die aktuellen Daten gespeichert sind.
+3. Auf `Anmelden` klicken und den in Firebase Authentication angelegten Benutzer verwenden.
+4. Wenn Firebase noch leer ist, die Frage zum Hochladen der lokalen Daten mit `OK` bestätigen.
+5. Warten, bis `Automatisch synchronisiert` angezeigt wird.
+6. Danach den Kalender auf iPhone und iPad aktualisieren und dort mit demselben Konto anmelden.
 
-1. Änderungen auf einem Gerät vornehmen.
-2. `Sicherung speichern` wählen.
-3. Die Datei `Urlaubskalender-Daten.json` in OneDrive speichern und eine ältere Datei ersetzen.
-4. Auf dem anderen Gerät zuerst `Daten laden` wählen.
-5. Die Datei aus OneDrive auswählen.
-6. Erst danach auf diesem Gerät Änderungen vornehmen.
+## Datenspeicherung
 
-Wichtig: Nicht gleichzeitig auf mehreren Geräten verschiedene Änderungen vornehmen. Es gibt nur eine vollständige Sicherungsdatei; beim Einlesen ersetzt sie den lokalen Stand.
+Die Daten werden getrennt gespeichert:
 
-### Windows
+- `users/{uid}/settings/main`
+- `users/{uid}/entries/{entryId}`
+- `users/{uid}/series/{seriesId}`
 
-Beim Speichern öffnet sich in aktuellen Chromium-Browsern normalerweise ein Speichern-Dialog. Als Ziel kann ein synchronisierter OneDrive-Ordner gewählt werden.
-
-### iPhone und iPad
-
-Beim Speichern öffnet sich das Teilen-Menü. `In Dateien sichern` wählen, OneDrive öffnen und die vorhandene Datei ersetzen. Zum Laden kann die Datei über die Dateien-App direkt aus OneDrive ausgewählt werden.
+Dadurch überschreiben Änderungen an verschiedenen Einträgen oder Serien einander nicht. Wird exakt derselbe Eintrag gleichzeitig auf zwei Geräten verändert, gilt die zuletzt gespeicherte Fassung.
 
 ## GitHub Pages aktualisieren
 
-Die Dateien `index.html`, `app.js`, `styles.css`, `service-worker.js`, `manifest.webmanifest` und `README.md` in das bestehende Repository hochladen und die vorhandenen Dateien ersetzen. GitHub Pages veröffentlicht die Änderung anschließend automatisch.
+Alle Dateien und den Ordner `icons` in das bestehende Repository hochladen und vorhandene Dateien ersetzen. GitHub Pages veröffentlicht das Update anschließend automatisch.
 
-## Datenschutz
+## Notfallsicherung
 
-GitHub enthält nur den Programmcode. Persönliche Urlaubsdaten werden nicht in das öffentliche Repository übertragen. Sie liegen lokal im Browser und in der Sicherungsdatei, die der Nutzer selbst in OneDrive ablegt.
-
-
-## Kalenderansichten
-
-Oben kann zwischen `Jahr`, `Monat` und `Woche` umgeschaltet werden. In der Monats- und Wochenansicht werden die Bezeichnungen der Einträge direkt im Kalender angezeigt. Mit den Pfeiltasten wird je nach Ansicht ein Jahr, ein Monat oder eine Woche vor- beziehungsweise zurückgeschaltet.
-
-## Einzelnen Termin einer Serie verschieben
-
-Den betreffenden Tag im Kalender öffnen, beim Serientermin `Ausnahme bearbeiten` wählen und den neuen Tag eintragen. Nur dieser eine Termin wird verschoben. Am ursprünglichen Tag bleibt ein Hinweis stehen, damit die Änderung nachvollziehbar ist. Die Ausnahme kann später zurückgesetzt werden.
-
-## Neue Eintragsarten
-
-- `Krank`: wird im Kalender angezeigt und nicht vom Urlaubskonto abgezogen.
-- `Samstagsarbeit`: wird im Kalender angezeigt und nicht vom Urlaubskonto abgezogen. An diesem Tag gilt der Nutzer in der Anzeige gemeinsamer freier Tage nicht als frei.
-- `Ausgleichsfrei`: wird nicht vom Urlaubskonto abgezogen und wie ein eigener freier Tag behandelt. Liegt dieser Tag in einem längeren Urlaubszeitraum, wird dafür kein zusätzlicher Urlaubstag gezählt.
+Die JSON-Sicherung bleibt erhalten. Über `Sicherung speichern` kann jederzeit eine vollständige Kopie erstellt werden. Beim Einlesen einer Sicherung wird der Datenstand nach Bestätigung auch mit Firebase abgeglichen.
